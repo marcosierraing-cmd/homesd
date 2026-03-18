@@ -1,10 +1,8 @@
 import { useState } from 'react'
 
 const ALLOWED_EMAILS = [
-  // Agrega aquí los emails de Marco y Nayeli
-  // 'marcosierraing@gmail.com',
-  // 'naye.davila.gonzalez@gmail.com',
-  // Durante desarrollo, cualquier cuenta de Google puede entrar
+  'marcosierraing@gmail.com',
+  'naye.davila.gonzalez@gmail.com',
 ]
 
 export default function LoginScreen({ onLogin }) {
