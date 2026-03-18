@@ -2,13 +2,12 @@ import { useState, useRef } from 'react'
 import { CATEGORIES, CUENTAS, USUARIOS, autoAsignar } from '../data/budget.js'
 import { useNavigate } from 'react-router-dom'
 
-const MODOS = ['ticket', 'movimiento', 'manual']
-
 export default function CaptureScreen({ onAdd, user }) {
   const navigate = useNavigate()
-  const fileRef = useRef()
+  const cameraRef = useRef()
+  const galleryRef = useRef()
   const [modo, setModo] = useState('ticket')
-  const [step, setStep] = useState('idle') // idle | preview | processing | confirm | saving
+  const [step, setStep] = useState('idle')
   const [imageData, setImageData] = useState(null)
   const [extracted, setExtracted] = useState(null)
   const [form, setForm] = useState({
@@ -33,6 +32,7 @@ export default function CaptureScreen({ onAdd, user }) {
       setStep('preview')
     }
     reader.readAsDataURL(file)
+    e.target.value = ''
   }
 
   const processWithClaude = async () => {
@@ -42,15 +42,10 @@ export default function CaptureScreen({ onAdd, user }) {
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          image: imageData,
-          tipo: modo,
-        })
+        body: JSON.stringify({ image: imageData, tipo: modo })
       })
-
       if (!response.ok) throw new Error('Error al procesar')
       const data = await response.json()
-
       const autocat = autoAsignar(data.descripcion || data.comercio)
       setExtracted(data)
       setForm(prev => ({
@@ -62,7 +57,7 @@ export default function CaptureScreen({ onAdd, user }) {
       }))
       setStep('confirm')
     } catch (err) {
-      setError('No se pudo procesar la imagen. Captura manual.')
+      setError('No se pudo procesar la imagen. Completa manualmente.')
       setStep('confirm')
     }
   }
@@ -83,7 +78,7 @@ export default function CaptureScreen({ onAdd, user }) {
       imagen: imageData,
       modoCaptura: modo,
     })
-    setTimeout(() => navigate('/transactions'), 600)
+    setTimeout(() => navigate('/transactions'), 800)
   }
 
   const reset = () => {
@@ -102,7 +97,7 @@ export default function CaptureScreen({ onAdd, user }) {
         Registrar gasto
       </h2>
       <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>
-        Foto de ticket o movimiento bancario
+        Ticket, movimiento bancario o captura manual
       </p>
 
       {/* Mode selector */}
@@ -116,7 +111,8 @@ export default function CaptureScreen({ onAdd, user }) {
             onClick={() => { setModo(m.id); reset() }}
             style={{
               flex: 1, padding: '8px 0',
-              borderRadius: 8, border: `0.5px solid ${modo === m.id ? 'var(--gold-dim)' : 'var(--border2)'}`,
+              borderRadius: 8,
+              border: `0.5px solid ${modo === m.id ? 'var(--gold-dim)' : 'var(--border2)'}`,
               background: modo === m.id ? 'var(--gold-bg)' : 'var(--card)',
               color: modo === m.id ? 'var(--gold)' : 'var(--text3)',
               fontSize: 12, fontWeight: 500, cursor: 'pointer',
@@ -126,23 +122,34 @@ export default function CaptureScreen({ onAdd, user }) {
         ))}
       </div>
 
-      {/* IDLE: camera button */}
+      {/* IDLE */}
       {step === 'idle' && modo !== 'manual' && (
-        <div>
-          <input ref={fileRef} type="file" accept="image/*" capture="environment"
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <input ref={cameraRef} type="file" accept="image/*" capture="environment"
             style={{ display: 'none' }} onChange={handlePhoto} />
+          <input ref={galleryRef} type="file" accept="image/*"
+            style={{ display: 'none' }} onChange={handlePhoto} />
+
           <button className="btn btn-primary"
-            onClick={() => fileRef.current?.click()}
-            style={{ width: '100%', height: 120, flexDirection: 'column', gap: 12, borderRadius: 16 }}>
+            onClick={() => cameraRef.current?.click()}
+            style={{ width: '100%', height: 90, flexDirection: 'column', gap: 8, borderRadius: 16 }}>
             <CameraIcon />
-            <span style={{ fontSize: 15 }}>
-              {modo === 'ticket' ? 'Fotografiar ticket' : 'Fotografiar movimiento'}
+            <span style={{ fontSize: 14 }}>
+              {modo === 'ticket' ? 'Tomar foto del ticket' : 'Fotografiar movimiento bancario'}
             </span>
           </button>
+
+          <button className="btn btn-secondary"
+            onClick={() => galleryRef.current?.click()}
+            style={{ width: '100%', height: 68, flexDirection: 'row', gap: 10, borderRadius: 14 }}>
+            <GalleryIcon />
+            <span style={{ fontSize: 14 }}>Elegir de galería o fotos guardadas</span>
+          </button>
+
           <button className="btn btn-ghost"
             onClick={() => setStep('confirm')}
-            style={{ width: '100%', marginTop: 12, fontSize: 13 }}>
-            Captura manual
+            style={{ width: '100%', fontSize: 13 }}>
+            Captura manual sin foto
           </button>
         </div>
       )}
@@ -151,19 +158,23 @@ export default function CaptureScreen({ onAdd, user }) {
       {step === 'preview' && imageData && (
         <div>
           <img src={imageData} alt="preview"
-            style={{ width: '100%', borderRadius: 12, marginBottom: 16, maxHeight: 280, objectFit: 'cover' }} />
+            style={{ width: '100%', borderRadius: 12, marginBottom: 16, maxHeight: 300, objectFit: 'contain', background: 'var(--card)' }} />
           <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-secondary" onClick={reset} style={{ flex: 1 }}>Retomar</button>
+            <button className="btn btn-secondary" onClick={reset} style={{ flex: 1 }}>Cambiar foto</button>
             <button className="btn btn-primary" onClick={processWithClaude} style={{ flex: 2 }}>
-              Procesar con IA
+              Procesar con Claude IA
             </button>
           </div>
+          <button className="btn btn-ghost" onClick={() => setStep('confirm')}
+            style={{ width: '100%', marginTop: 8, fontSize: 12 }}>
+            Saltar IA — capturar manualmente
+          </button>
         </div>
       )}
 
       {/* PROCESSING */}
       {step === 'processing' && (
-        <div style={{ textAlign: 'center', padding: '40px 0' }}>
+        <div style={{ textAlign: 'center', padding: '50px 0' }}>
           <div style={{
             width: 48, height: 48, borderRadius: '50%',
             border: '2px solid var(--gold-bg)',
@@ -171,23 +182,23 @@ export default function CaptureScreen({ onAdd, user }) {
             animation: 'spin 0.8s linear infinite',
             margin: '0 auto 16px',
           }} />
-          <p style={{ color: 'var(--text2)', fontSize: 14 }}>Analizando con Claude...</p>
+          <p style={{ color: 'var(--text2)', fontSize: 14 }}>Claude está leyendo el ticket...</p>
           <p style={{ color: 'var(--text3)', fontSize: 12, marginTop: 8 }}>Extrayendo monto, comercio y categoría</p>
         </div>
       )}
 
-      {/* CONFIRM / FORM */}
+      {/* CONFIRM FORM */}
       {(step === 'confirm' || modo === 'manual') && step !== 'processing' && step !== 'saving' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {imageData && (
             <img src={imageData} alt="preview"
-              style={{ width: '100%', borderRadius: 10, maxHeight: 160, objectFit: 'cover', opacity: 0.7 }} />
+              style={{ width: '100%', borderRadius: 10, maxHeight: 140, objectFit: 'contain', background: 'var(--card)', opacity: 0.8 }} />
           )}
 
           {extracted && (
             <div style={{ background: 'var(--green-bg)', borderRadius: 10, padding: '10px 12px' }}>
-              <p style={{ fontSize: 11, color: 'var(--teal)' }}>
-                IA extrajo: {extracted.comercio} · {mxn(extracted.monto)} · {extracted.fecha}
+              <p style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 500 }}>
+                Claude extrajo: {extracted.comercio} · {extracted.monto ? mxn(extracted.monto) : '?'} · {extracted.fecha || 'sin fecha'} · confianza: {extracted.confianza}
               </p>
             </div>
           )}
@@ -207,7 +218,7 @@ export default function CaptureScreen({ onAdd, user }) {
           <div>
             <label style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6, display: 'block' }}>DESCRIPCIÓN</label>
             <input className="input"
-              placeholder="Ej: Carnicería Coyotl, gasolina..."
+              placeholder="Ej: Coyotl carnicería, Costco despensa..."
               value={form.descripcion}
               onChange={e => {
                 const desc = e.target.value
@@ -309,8 +320,15 @@ export default function CaptureScreen({ onAdd, user }) {
       {/* SAVING */}
       {step === 'saving' && (
         <div style={{ textAlign: 'center', padding: '60px 0' }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>✓</div>
-          <p style={{ color: 'var(--teal)', fontSize: 16, fontWeight: 500 }}>Guardado</p>
+          <div style={{
+            width: 52, height: 52, borderRadius: '50%',
+            background: 'var(--green-bg)',
+            border: '2px solid var(--teal)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 16px',
+            fontSize: 24,
+          }}>✓</div>
+          <p style={{ color: 'var(--teal)', fontSize: 16, fontWeight: 500 }}>Gasto guardado</p>
         </div>
       )}
     </div>
@@ -319,9 +337,18 @@ export default function CaptureScreen({ onAdd, user }) {
 
 function CameraIcon() {
   return (
-    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#0A1628" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#0A1628" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
       <circle cx="12" cy="13" r="4"/>
+    </svg>
+  )
+}
+
+function GalleryIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+      <polyline points="21 15 16 10 5 21"/>
     </svg>
   )
 }
