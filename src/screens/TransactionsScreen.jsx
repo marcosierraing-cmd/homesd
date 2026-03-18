@@ -7,7 +7,6 @@ export default function TransactionsScreen({ transactions, onDelete }) {
   const [filtromes, setFiltromes] = useState(new Date().getMonth())
 
   const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
-  const mesActual = new Date().getMonth()
 
   const filtered = useMemo(() => {
     return transactions.filter(t => {
@@ -35,14 +34,12 @@ export default function TransactionsScreen({ transactions, onDelete }) {
   return (
     <div className="screen" style={{ padding: '20px 0 80px' }}>
       <div style={{ padding: '0 20px 16px' }}>
-        <h2 style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>Gastos</h2>
+        <h2 style={{ fontSize: 22, fontWeight: 600, marginBottom: 12 }}>Gastos</h2>
 
-        {/* Month scroll */}
-        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, marginBottom: 14 }}
-          className="screen">
+        {/* Filtro mes */}
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, marginBottom: 14 }}>
           {meses.map((m, i) => (
-            <button key={i}
-              onClick={() => setFiltromes(i)}
+            <button key={i} onClick={() => setFiltromes(i)}
               style={{
                 flexShrink: 0, padding: '6px 14px',
                 borderRadius: 20, border: 'none', cursor: 'pointer',
@@ -55,12 +52,13 @@ export default function TransactionsScreen({ transactions, onDelete }) {
           ))}
         </div>
 
-        {/* Category filter */}
+        {/* Filtro categoría */}
         <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
           <button onClick={() => setFiltrocat('all')}
             style={{
               flexShrink: 0, padding: '5px 12px',
-              borderRadius: 16, border: `0.5px solid ${filtrocat === 'all' ? 'var(--gold-dim)' : 'var(--border2)'}`,
+              borderRadius: 16,
+              border: `0.5px solid ${filtrocat === 'all' ? 'var(--gold-dim)' : 'var(--border2)'}`,
               background: filtrocat === 'all' ? 'var(--gold-bg)' : 'var(--card)',
               color: filtrocat === 'all' ? 'var(--gold)' : 'var(--text3)',
               fontSize: 11, cursor: 'pointer', fontWeight: 500,
@@ -83,7 +81,7 @@ export default function TransactionsScreen({ transactions, onDelete }) {
         </div>
       </div>
 
-      {/* Summary */}
+      {/* Resumen */}
       <div style={{
         margin: '0 16px 16px',
         padding: '12px 16px',
@@ -99,13 +97,13 @@ export default function TransactionsScreen({ transactions, onDelete }) {
         </span>
       </div>
 
-      {/* Grouped transactions */}
+      {/* Lista agrupada por día */}
       <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
         {Object.keys(grouped).length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text3)' }}>
             <p style={{ fontSize: 32, marginBottom: 12 }}>📋</p>
             <p style={{ fontSize: 14 }}>Sin gastos registrados</p>
-            <p style={{ fontSize: 12, marginTop: 6 }}>Usa el botón + para registrar</p>
+            <p style={{ fontSize: 12, marginTop: 6 }}>Usa el botón de cámara para registrar</p>
           </div>
         ) : (
           Object.entries(grouped).map(([fecha, txs]) => (
@@ -118,7 +116,11 @@ export default function TransactionsScreen({ transactions, onDelete }) {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {txs.map(tx => (
-                  <TransactionCard key={tx.id} tx={tx} />
+                  <TransactionCard
+                    key={tx.id}
+                    tx={tx}
+                    onDelete={onDelete}
+                  />
                 ))}
               </div>
             </div>
