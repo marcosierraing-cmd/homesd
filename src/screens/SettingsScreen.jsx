@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { BUDGET_VERSION, INGRESO_QUINCENAL, INGRESO_MENSUAL, calcularTotalQ } from '../data/budget.js'
+import { usePrivacy } from '../context/PrivacyContext.jsx'
 
 export default function SettingsScreen({ user, onLogout, settings, onUpdateSettings }) {
   const [notif, setNotif] = useState(settings?.notificationsEnabled || false)
+  const { mask } = usePrivacy()
   const mxn = n => '$' + Math.round(n).toLocaleString('es-MX')
 
   const totalQ1 = calcularTotalQ(1)
@@ -22,7 +24,6 @@ export default function SettingsScreen({ user, onLogout, settings, onUpdateSetti
     <div className="screen" style={{ padding: '20px 20px 80px' }}>
       <h2 style={{ fontSize: 22, fontWeight: 600, marginBottom: 20 }}>Configuración</h2>
 
-      {/* User card */}
       {user && (
         <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
           <div style={{
@@ -45,7 +46,6 @@ export default function SettingsScreen({ user, onLogout, settings, onUpdateSetti
         </div>
       )}
 
-      {/* Budget summary */}
       <div style={{ marginBottom: 20 }}>
         <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, letterSpacing: '0.06em', marginBottom: 10 }}>
           RESUMEN DEL PRESUPUESTO BASE
@@ -60,30 +60,22 @@ export default function SettingsScreen({ user, onLogout, settings, onUpdateSetti
           ].map(([label, value, color]) => (
             <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '0.5px solid var(--border2)' }}>
               <span style={{ fontSize: 13, color: 'var(--text2)' }}>{label}</span>
-              <span style={{ fontSize: 13, fontWeight: 500, color, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color, fontVariantNumeric: 'tabular-nums' }}>{mask(value)}</span>
             </div>
           ))}
-          <p style={{ fontSize: 10, color: 'var(--text3)', marginTop: 8 }}>
-            Versión presupuesto: {BUDGET_VERSION}
-          </p>
+          <p style={{ fontSize: 10, color: 'var(--text3)', marginTop: 8 }}>Versión presupuesto: {BUDGET_VERSION}</p>
         </div>
       </div>
 
-      {/* Notifications */}
       <div style={{ marginBottom: 20 }}>
-        <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, letterSpacing: '0.06em', marginBottom: 10 }}>
-          ALERTAS
-        </p>
+        <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, letterSpacing: '0.06em', marginBottom: 10 }}>ALERTAS</p>
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <p style={{ fontSize: 13, fontWeight: 500 }}>Alerta al 80%</p>
-              <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-                Notificación cuando una categoría llega al 80% del techo
-              </p>
+              <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>Notificación cuando una categoría llega al 80% del techo</p>
             </div>
-            <button
-              onClick={notif ? undefined : requestNotifications}
+            <button onClick={notif ? undefined : requestNotifications}
               style={{
                 width: 44, height: 26, borderRadius: 13,
                 background: notif ? 'var(--teal)' : 'var(--card2)',
@@ -100,19 +92,16 @@ export default function SettingsScreen({ user, onLogout, settings, onUpdateSetti
         </div>
       </div>
 
-      {/* Deudas status */}
       <div style={{ marginBottom: 20 }}>
-        <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, letterSpacing: '0.06em', marginBottom: 10 }}>
-          ESTADO DE DEUDAS
-        </p>
+        <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, letterSpacing: '0.06em', marginBottom: 10 }}>ESTADO DE DEUDAS</p>
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {[
             { name: 'TC BBVA *2251', status: 'LIQUIDADA ✓', color: 'var(--teal)', detail: 'Eliminada en marzo 2026' },
             { name: 'Renta abr-may-jun', status: 'PREPAGADA ✓', color: 'var(--teal)', detail: '3 meses cubiertos' },
-            { name: 'Préstamo Scotiabank', status: '55/60 pagos', color: 'var(--text)', detail: '$444,779 restante · 24.77%' },
-            { name: 'GM Tracker', status: '27 rentas', color: 'var(--text)', detail: '$297,928 · vence 11 c/mes' },
-            { name: 'Peugeot 3008', status: '29 rentas', color: 'var(--text)', detail: '~$372,730 · vence día 5 c/mes' },
-            { name: 'TC Scotia *6201', status: '$72,202', color: 'var(--amber)', detail: '34.28% tasa · atacar con abonos' },
+            { name: 'Préstamo Scotiabank', status: '55/60 pagos', color: 'var(--text)', detail: mask('$444,779 restante') + ' · 24.77%' },
+            { name: 'GM Tracker', status: '27 rentas', color: 'var(--text)', detail: mask('$297,928') + ' · vence 11 c/mes' },
+            { name: 'Peugeot 3008', status: '29 rentas', color: 'var(--text)', detail: mask('~$372,730') + ' · vence día 5 c/mes' },
+            { name: 'TC Scotia *6201', status: mask('$72,202'), color: 'var(--amber)', detail: '34.28% tasa · atacar con abonos' },
           ].map(d => (
             <div key={d.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
@@ -125,13 +114,10 @@ export default function SettingsScreen({ user, onLogout, settings, onUpdateSetti
         </div>
       </div>
 
-      {/* App info */}
       <div style={{ padding: '16px', background: 'var(--card)', borderRadius: 12, textAlign: 'center' }}>
         <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--gold)', marginBottom: 4 }}>Home SD v1.0</p>
         <p style={{ fontSize: 11, color: 'var(--text3)' }}>Sierra Dávila · 2026</p>
-        <p style={{ fontSize: 10, color: 'var(--text3)', marginTop: 6 }}>
-          Powered by Claude Haiku — datos seguros en dispositivo
-        </p>
+        <p style={{ fontSize: 10, color: 'var(--text3)', marginTop: 6 }}>Powered by Claude Haiku — datos seguros en Google Drive</p>
       </div>
     </div>
   )
