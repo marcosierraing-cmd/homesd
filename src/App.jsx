@@ -12,7 +12,7 @@ import SettingsScreen from './screens/SettingsScreen.jsx'
 import BottomNav from './components/BottomNav.jsx'
 
 export default function App() {
-  const [user, setUser] = useState(null)
+const [user, setUser] = useState(null)
   const {
     transactions,
     addTransaction,
@@ -20,6 +20,7 @@ export default function App() {
     deleteTransaction,
     budgetOverrides,
     updateBudgetOverride,
+    refresh,
   } = useStorage()
 
   const logout = () => {
@@ -27,8 +28,13 @@ export default function App() {
     setUser(null)
   }
 
+  const handleLogin = (userData) => {
+    setUser(userData)
+    setTimeout(() => refresh(), 500)
+  }
+
   if (!user) {
-    return <LoginScreen onLogin={setUser} />
+    return <LoginScreen onLogin={handleLogin} />
   }
 
   return (
