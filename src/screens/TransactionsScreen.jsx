@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import TransactionCard from '../components/TransactionCard.jsx'
 import { CATEGORIES } from '../data/budget.js'
+import { usePrivacy } from '../context/PrivacyContext.jsx'
 
 export default function TransactionsScreen({ transactions, onDelete }) {
   const [filtrocat, setFiltrocat] = useState('all')
@@ -19,6 +20,7 @@ export default function TransactionsScreen({ transactions, onDelete }) {
 
   const totalFiltrado = filtered.reduce((s, t) => s + (t.monto || 0), 0)
   const mxn = n => '$' + Math.round(n).toLocaleString('es-MX')
+  const { mask } = usePrivacy()
 
   const grouped = useMemo(() => {
     const groups = {}
@@ -93,7 +95,7 @@ export default function TransactionsScreen({ transactions, onDelete }) {
           {filtered.length} transacciones
         </span>
         <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
-          {mxn(totalFiltrado)}
+          {mask(mxn(totalFiltrado))}
         </span>
       </div>
 
@@ -111,7 +113,7 @@ export default function TransactionsScreen({ transactions, onDelete }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 4px 6px' }}>
                 <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500 }}>{fecha}</span>
                 <span style={{ fontSize: 11, color: 'var(--text3)', fontVariantNumeric: 'tabular-nums' }}>
-                  {mxn(txs.reduce((s, t) => s + t.monto, 0))}
+                  {mask(mxn(txs.reduce((s, t) => s + t.monto, 0)))}
                 </span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
