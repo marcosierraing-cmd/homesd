@@ -7,8 +7,6 @@ const ALLOWED_EMAILS = [
 ]
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
-
-// Scopes: perfil + email + acceso a archivos creados por la app en Drive
 const SCOPES = 'openid email profile https://www.googleapis.com/auth/drive.file'
 
 export default function LoginScreen({ onLogin }) {
@@ -25,8 +23,6 @@ export default function LoginScreen({ onLogin }) {
     script.async = true
     script.defer = true
     script.onload = () => {
-      // Usamos initTokenClient (OAuth2 flow) en lugar de id.initialize
-      // Esto nos da access_token real para llamar a Drive API
       tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
         scope: SCOPES,
@@ -40,7 +36,6 @@ export default function LoginScreen({ onLogin }) {
     }
   }, [])
 
-  // Recibe el access_token de Google
   const handleTokenResponse = async (tokenResponse) => {
     if (tokenResponse.error) {
       setError('Error al iniciar sesión con Google.')
@@ -49,10 +44,8 @@ export default function LoginScreen({ onLogin }) {
     }
 
     try {
-      // Guardar access_token para Drive API
       saveAccessToken(tokenResponse.access_token)
 
-      // Obtener info del usuario con el access_token
       const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
       })
@@ -88,11 +81,9 @@ export default function LoginScreen({ onLogin }) {
     }
     setError('')
     setLoading(true)
-    // Solicitar token con popup de selección de cuenta
     tokenClientRef.current.requestAccessToken({ prompt: 'select_account' })
   }
 
-  // Fallback manual para desarrollo (sin Drive sync)
   const handleManualLogin = (usuarioId) => {
     setLoading(true)
     const usuarios = {
@@ -117,7 +108,6 @@ export default function LoginScreen({ onLogin }) {
       position: 'relative',
       overflow: 'hidden',
     }}>
-      {/* Background glow */}
       <div style={{
         position: 'absolute', top: '20%', left: '50%',
         transform: 'translateX(-50%)',
@@ -126,7 +116,6 @@ export default function LoginScreen({ onLogin }) {
         pointerEvents: 'none',
       }} />
 
-      {/* Icon */}
       <div style={{
         width: 100, height: 100, borderRadius: 24,
         background: 'var(--card)',
@@ -143,7 +132,6 @@ export default function LoginScreen({ onLogin }) {
         <HouseIcon />
       </div>
 
-      {/* Title */}
       <h1 className="serif" style={{ fontSize: 36, color: 'var(--gold)', marginBottom: 6, letterSpacing: '-0.5px' }}>
         Home SD
       </h1>
@@ -151,9 +139,7 @@ export default function LoginScreen({ onLogin }) {
         Control financiero familiar
       </p>
 
-      {/* Buttons */}
       <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
-
         {GOOGLE_CLIENT_ID ? (
           <button className="btn btn-primary"
             onClick={handleGoogleClick}
