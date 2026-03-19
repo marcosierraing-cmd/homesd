@@ -8,7 +8,7 @@ export default function TransactionCard({ tx, onDelete }) {
   const cuenta = CUENTAS.find(c => c.id === tx.cuentaId)
   const usuario = USUARIOS.find(u => u.id === tx.usuarioId)
 
-  const fecha = new Date(tx.timestamp)
+  const fecha = new Date(tx.timestamp || tx.createdAt)
   const fechaStr = fecha.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })
   const horaStr = fecha.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
 
