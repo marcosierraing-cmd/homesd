@@ -1,23 +1,23 @@
 import { useState } from 'react'
-import { BUDGET_VERSION, INGRESO_QUINCENAL, INGRESO_MENSUAL, calcularTotalQ } from '../data/budget.js'
+import { useNavigate } from 'react-router-dom'
+import { BUDGET_VERSION, INGRESO_QUINCENAL, INGRESO_MENSUAL } from '../data/budget.js'
+import { calcularTotalQMerged } from '../utils/budgetMerge.js'
 import { usePrivacy } from '../context/PrivacyContext.jsx'
 
-export default function SettingsScreen({ user, onLogout, settings, onUpdateSettings }) {
-  const [notif, setNotif] = useState(settings?.notificationsEnabled || false)
+export default function SettingsScreen({ user, onLogout, budgetOverrides = {}, onUpdateBudgetOverride }) {
+  const [notif, setNotif] = useState(false)
   const { mask } = usePrivacy()
+  const navigate = useNavigate()
   const mxn = n => '$' + Math.round(n).toLocaleString('es-MX')
 
-  const totalQ1 = calcularTotalQ(1)
-  const totalQ2 = calcularTotalQ(2)
+  const totalQ1 = calcularTotalQMerged(1, budgetOverrides)
+  const totalQ2 = calcularTotalQMerged(2, budgetOverrides)
   const totalMes = totalQ1 + totalQ2
 
   const requestNotifications = async () => {
     if (!('Notification' in window)) return
     const perm = await Notification.requestPermission()
-    if (perm === 'granted') {
-      setNotif(true)
-      onUpdateSettings?.({ ...settings, notificationsEnabled: true })
-    }
+    if (perm === 'granted') setNotif(true)
   }
 
   return (
@@ -45,6 +45,24 @@ export default function SettingsScreen({ user, onLogout, settings, onUpdateSetti
           </button>
         </div>
       )}
+
+      {/* Botón editor de presupuesto */}
+      <button onClick={() => navigate('/budget-editor')}
+        style={{
+          width: '100%', padding: '14px 16px', borderRadius: 12, cursor: 'pointer',
+          background: 'var(--gold-bg)', border: '1px solid var(--gold-dim)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: 20,
+        }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 20 }}>📊</span>
+          <div style={{ textAlign: 'left' }}>
+            <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--gold)' }}>Editor de presupuesto</p>
+            <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>Editar categorías, montos y subcategorías</p>
+          </div>
+        </div>
+        <span style={{ color: 'var(--gold)', fontSize: 18 }}>→</span>
+      </button>
 
       <div style={{ marginBottom: 20 }}>
         <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, letterSpacing: '0.06em', marginBottom: 10 }}>
