@@ -1,10 +1,12 @@
 import { useState, useRef } from 'react'
+import { usePrivacy } from '../context/PrivacyContext.jsx'
 
 export default function ConciliationScreen({ transactions }) {
   const fileRef = useRef()
   const [step, setStep] = useState('idle')
   const [results, setResults] = useState(null)
   const [imageData, setImageData] = useState(null)
+  const { mask } = usePrivacy()
 
   const handleFile = (e) => {
     const file = e.target.files?.[0]
@@ -47,23 +49,18 @@ export default function ConciliationScreen({ transactions }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <input ref={fileRef} type="file" accept="image/*,application/pdf"
             style={{ display: 'none' }} onChange={handleFile} />
-
           <button className="btn btn-primary" onClick={() => fileRef.current?.click()}
             style={{ width: '100%', height: 80, flexDirection: 'column', gap: 8 }}>
             <span style={{ fontSize: 24 }}>📸</span>
             <span>Foto de movimientos</span>
           </button>
-
           <button className="btn btn-secondary" onClick={() => fileRef.current?.click()}
             style={{ width: '100%', height: 70, flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 20 }}>📄</span>
             <span style={{ fontSize: 13 }}>Subir PDF estado de cuenta</span>
           </button>
-
           <div style={{ padding: '14px', background: 'var(--card)', borderRadius: 12, marginTop: 8 }}>
-            <p style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 500, marginBottom: 8 }}>
-              ¿Cómo funciona?
-            </p>
+            <p style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 500, marginBottom: 8 }}>¿Cómo funciona?</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {[
                 ['📷', 'Fotografías corte semanal o sube PDF del estado de cuenta'],
@@ -78,8 +75,6 @@ export default function ConciliationScreen({ transactions }) {
               ))}
             </div>
           </div>
-
-          {/* Stats summary */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
             <div style={{ background: 'var(--card)', borderRadius: 10, padding: '12px 14px' }}>
               <p style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4 }}>GASTOS REGISTRADOS</p>
@@ -88,7 +83,7 @@ export default function ConciliationScreen({ transactions }) {
             <div style={{ background: 'var(--card)', borderRadius: 10, padding: '12px 14px' }}>
               <p style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4 }}>TOTAL REGISTRADO</p>
               <p style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
-                {mxn(transactions.reduce((s,t) => s + (t.monto||0), 0))}
+                {mask(mxn(transactions.reduce((s, t) => s + (t.monto || 0), 0)))}
               </p>
             </div>
           </div>
@@ -101,9 +96,7 @@ export default function ConciliationScreen({ transactions }) {
             style={{ width: '100%', borderRadius: 12, marginBottom: 16, maxHeight: 300, objectFit: 'cover' }} />
           <div style={{ display: 'flex', gap: 10 }}>
             <button className="btn btn-secondary" onClick={() => setStep('idle')} style={{ flex: 1 }}>Cancelar</button>
-            <button className="btn btn-primary" onClick={processConciliation} style={{ flex: 2 }}>
-              Conciliar con IA
-            </button>
+            <button className="btn btn-primary" onClick={processConciliation} style={{ flex: 2 }}>Conciliar con IA</button>
           </div>
         </div>
       )}
@@ -134,26 +127,21 @@ export default function ConciliationScreen({ transactions }) {
               </div>
             ))}
           </div>
-
           {(results.fugas?.length || 0) > 0 && (
             <div style={{ marginBottom: 16 }}>
-              <p style={{ fontSize: 12, color: 'var(--red)', fontWeight: 500, marginBottom: 8 }}>
-                Fugas sin ticket registrado
-              </p>
+              <p style={{ fontSize: 12, color: 'var(--red)', fontWeight: 500, marginBottom: 8 }}>Fugas sin ticket registrado</p>
               {results.fugas.map((f, i) => (
                 <div key={i} style={{ background: 'var(--red-bg)', borderRadius: 8, padding: '10px 12px', marginBottom: 6 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ fontSize: 13, color: 'var(--text)' }}>{f.descripcion}</span>
-                    <span style={{ fontSize: 13, color: 'var(--red)', fontVariantNumeric: 'tabular-nums' }}>{mxn(f.monto)}</span>
+                    <span style={{ fontSize: 13, color: 'var(--red)', fontVariantNumeric: 'tabular-nums' }}>{mask(mxn(f.monto))}</span>
                   </div>
                   <span style={{ fontSize: 11, color: 'var(--text3)' }}>{f.fecha}</span>
                 </div>
               ))}
             </div>
           )}
-
-          <button className="btn btn-secondary" onClick={() => { setStep('idle'); setResults(null) }}
-            style={{ width: '100%' }}>
+          <button className="btn btn-secondary" onClick={() => { setStep('idle'); setResults(null) }} style={{ width: '100%' }}>
             Nueva conciliación
           </button>
         </div>
