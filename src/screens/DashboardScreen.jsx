@@ -2,20 +2,21 @@ import { useState, useMemo } from 'react'
 import SemaphoreCard from '../components/SemaphoreCard.jsx'
 import { CATEGORIES, INGRESO_QUINCENAL, getMesActual, getQuincenaActual, calcularTotalQ } from '../data/budget.js'
 import { getQuincenaGastado, getMesGastado } from '../hooks/useStorage.js'
+import { usePrivacy } from '../context/PrivacyContext.jsx'
 
 export default function DashboardScreen({ transactions, user }) {
-  const [vista, setVista] = useState('quincenal') // 'quincenal' | 'mensual'
+  const [vista, setVista] = useState('quincenal')
   const [quincena, setQuincena] = useState(getQuincenaActual())
+  const { mask } = usePrivacy()
   const mes = new Date().getMonth()
   const mesNombre = getMesActual()
-
   const totalPresupuesto = useMemo(() => calcularTotalQ(quincena), [quincena])
   const mxn = n => '$' + Math.round(n).toLocaleString('es-MX')
 
   const totalGastado = useMemo(() => {
     return transactions
       .filter(t => {
-        const d = new Date(t.timestamp)
+        const d = new Date(t.timestamp || t.createdAt)
         const tQ = d.getDate() <= 15 ? 1 : 2
         return d.getMonth() === mes && tQ === quincena
       })
@@ -111,10 +112,10 @@ export default function DashboardScreen({ transactions, user }) {
                 {vista === 'quincenal' ? `Gastado Q${quincena}` : 'Gastado este mes'}
               </p>
               <p className="serif amount" style={{ fontSize: 32, color: 'var(--text)', lineHeight: 1 }}>
-                {mxn(totalGastado)}
+                {mask(mxn(totalGastado))}
               </p>
               <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>
-                de {mxn(totalPresupuesto)} presupuestado
+                de {mask(mxn(totalPresupuesto))} presupuestado
               </p>
             </div>
             <div style={{ textAlign: 'right' }}>
@@ -122,7 +123,7 @@ export default function DashboardScreen({ transactions, user }) {
                 fontSize: 22, fontWeight: 700,
                 color: pctTotal >= 1 ? 'var(--red)' : pctTotal >= 0.8 ? 'var(--amber)' : 'var(--teal)',
               }}>
-                {Math.round(pctTotal * 100)}%
+                {mask(`${Math.round(pctTotal * 100)}%`)}
               </div>
               <div style={{
                 width: 8, height: 8, borderRadius: '50%',
@@ -132,17 +133,19 @@ export default function DashboardScreen({ transactions, user }) {
               }} />
             </div>
           </div>
-
           <div className="progress-track" style={{ marginTop: 14, height: 8 }}>
             <div className="progress-fill" style={{
               width: `${Math.min(pctTotal * 100, 100)}%`,
               background: pctTotal >= 1 ? '#E24B4A' : pctTotal >= 0.8 ? '#EF9F27' : '#1D9E75',
             }} />
           </div>
-
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>Disponible: {mxn(Math.max(totalPresupuesto - totalGastado, 0))}</span>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>Ingresos: {mxn(INGRESO_QUINCENAL)}</span>
+            <span style={{ fontSize: 10, color: 'var(--text3)' }}>
+              Disponible: {mask(mxn(Math.max(totalPresupuesto - totalGastado, 0)))}
+            </span>
+            <span style={{ fontSize: 10, color: 'var(--text3)' }}>
+              Ingresos: {mask(mxn(INGRESO_QUINCENAL))}
+            </span>
           </div>
         </div>
       </div>
@@ -152,7 +155,6 @@ export default function DashboardScreen({ transactions, user }) {
         <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, letterSpacing: '0.06em', marginBottom: 4 }}>
           POR CATEGORÍA
         </p>
-
         {CATEGORIES.map(cat => {
           let presupuesto = 0
           cat.subcategories.forEach(sub => {
@@ -161,13 +163,10 @@ export default function DashboardScreen({ transactions, user }) {
               ? (quincena === 1 ? sub.q1 : sub.q2)
               : (sub.q1 + sub.q2)
           })
-
           if (presupuesto === 0) return null
-
           const gastado = vista === 'quincenal'
             ? getQuincenaGastado(transactions, cat.id, null, quincena, mes)
             : getMesGastado(transactions, cat.id, mes)
-
           return (
             <SemaphoreCard
               key={cat.id}
@@ -179,7 +178,7 @@ export default function DashboardScreen({ transactions, user }) {
         })}
       </div>
 
-      {/* Liquidados / Prepagados note */}
+      {/* Logros */}
       <div style={{ margin: '8px 16px 0', padding: '12px 14px', background: 'var(--green-bg)', borderRadius: 10 }}>
         <p style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 500, marginBottom: 4 }}>
           Logros de marzo 2026
