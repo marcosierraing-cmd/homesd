@@ -42,7 +42,7 @@ export default function App() {
           <Route path="/dashboard" element={<DashboardScreen transactions={transactions} user={user} budgetOverrides={budgetOverrides} />} />
           <Route path="/capture" element={<CaptureScreen onAdd={addTransaction} user={user} />} />
           <Route path="/transactions" element={<TransactionsScreen transactions={transactions} onDelete={deleteTransaction} />} />
-          <Route path="/conciliation" element={<ConciliationScreen transactions={transactions} />} />
+         <Route path="/conciliation" element={<ConciliationScreen transactions={transactions} onAdd={addTransaction} />} />
           <Route path="/settings" element={<SettingsScreen user={user} onLogout={logout} budgetOverrides={budgetOverrides} onUpdateBudgetOverride={handleUpdateBudgetOverride} />} />
           <Route path="/budget-editor" element={<BudgetEditorScreen budgetOverrides={budgetOverrides} onUpdateBudgetOverride={handleUpdateBudgetOverride} />} />
         </Routes>
