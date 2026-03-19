@@ -20,7 +20,7 @@
  * }
  */
 
-import { CATEGORIES } from './budget.js'
+import { CATEGORIES } from '../data/budget.js'
 
 export function mergeBudget(budgetOverrides = {}) {
   const {
