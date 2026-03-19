@@ -153,3 +153,34 @@ export function useStorage() {
     refresh: fetchFromDrive,
   };
 }
+// ─── Helpers de cálculo (exportados para DashboardScreen) ─────────────────────
+
+export function getQuincenaGastado(transactions) {
+  const now = new Date();
+  const mes = now.getMonth();
+  const anio = now.getFullYear();
+  const dia = now.getDate();
+  const esQ1 = dia <= 15;
+
+  return transactions
+    .filter(t => {
+      const fecha = new Date(t.date || t.createdAt);
+      const mismoMes = fecha.getMonth() === mes && fecha.getFullYear() === anio;
+      const mismaQ = esQ1 ? fecha.getDate() <= 15 : fecha.getDate() > 15;
+      return mismoMes && mismaQ;
+    })
+    .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+}
+
+export function getMesGastado(transactions) {
+  const now = new Date();
+  const mes = now.getMonth();
+  const anio = now.getFullYear();
+
+  return transactions
+    .filter(t => {
+      const fecha = new Date(t.date || t.createdAt);
+      return fecha.getMonth() === mes && fecha.getFullYear() === anio;
+    })
+    .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+}
