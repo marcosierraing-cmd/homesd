@@ -1,9 +1,11 @@
 import { useState, useRef } from 'react'
 import { CATEGORIES, CUENTAS, USUARIOS, autoAsignar } from '../data/budget.js'
 import { useNavigate } from 'react-router-dom'
+import { usePrivacy } from '../context/PrivacyContext.jsx'
 
 export default function CaptureScreen({ onAdd, user }) {
   const navigate = useNavigate()
+  const { hidden, toggle } = usePrivacy()
   const cameraRef = useRef()
   const galleryRef = useRef()
   const [modo, setModo] = useState('ticket')
@@ -20,7 +22,6 @@ export default function CaptureScreen({ onAdd, user }) {
     nota: '',
   })
   const [error, setError] = useState('')
-
   const mxn = n => '$' + Math.round(n).toLocaleString('es-MX')
 
   const handlePhoto = (e) => {
@@ -93,15 +94,55 @@ export default function CaptureScreen({ onAdd, user }) {
 
   return (
     <div className="screen" style={{ padding: '20px 20px 80px' }}>
-      <h2 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>
-        Registrar gasto
-      </h2>
-      <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>
-        Ticket, movimiento bancario o captura manual
-      </p>
+
+      {/* Header con botón de privacidad */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+        <div>
+          <h2 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>
+            Registrar gasto
+          </h2>
+          <p style={{ fontSize: 13, color: 'var(--text3)' }}>
+            Ticket, movimiento bancario o captura manual
+          </p>
+        </div>
+
+        {/* Botón ocultar/mostrar cifras */}
+        <button
+          onClick={toggle}
+          title={hidden ? 'Mostrar cifras' : 'Ocultar cifras'}
+          style={{
+            width: 40, height: 40,
+            borderRadius: 10,
+            border: `1px solid ${hidden ? 'var(--gold-dim)' : 'var(--border2)'}`,
+            background: hidden ? 'var(--gold-bg)' : 'var(--card)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer',
+            flexShrink: 0,
+            marginTop: 2,
+          }}>
+          {hidden ? <EyeOffIcon /> : <EyeIcon />}
+        </button>
+      </div>
+
+      {/* Indicador de modo privacidad */}
+      {hidden && (
+        <div style={{
+          background: 'var(--gold-bg)',
+          border: '0.5px solid var(--gold-dim)',
+          borderRadius: 8,
+          padding: '6px 10px',
+          marginBottom: 16,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+        }}>
+          <span style={{ fontSize: 11 }}>🔒</span>
+          <span style={{ fontSize: 11, color: 'var(--gold)' }}>Cifras ocultas en toda la app</span>
+        </div>
+      )}
 
       {/* Mode selector */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20, marginTop: hidden ? 0 : 16 }}>
         {[
           { id: 'ticket', label: 'Ticket' },
           { id: 'movimiento', label: 'Movimiento' },
@@ -129,7 +170,6 @@ export default function CaptureScreen({ onAdd, user }) {
             style={{ display: 'none' }} onChange={handlePhoto} />
           <input ref={galleryRef} type="file" accept="image/*"
             style={{ display: 'none' }} onChange={handlePhoto} />
-
           <button className="btn btn-primary"
             onClick={() => cameraRef.current?.click()}
             style={{ width: '100%', height: 90, flexDirection: 'column', gap: 8, borderRadius: 16 }}>
@@ -138,14 +178,12 @@ export default function CaptureScreen({ onAdd, user }) {
               {modo === 'ticket' ? 'Tomar foto del ticket' : 'Fotografiar movimiento bancario'}
             </span>
           </button>
-
           <button className="btn btn-secondary"
             onClick={() => galleryRef.current?.click()}
             style={{ width: '100%', height: 68, flexDirection: 'row', gap: 10, borderRadius: 14 }}>
             <GalleryIcon />
             <span style={{ fontSize: 14 }}>Elegir de galería o fotos guardadas</span>
           </button>
-
           <button className="btn btn-ghost"
             onClick={() => setStep('confirm')}
             style={{ width: '100%', fontSize: 13 }}>
@@ -194,7 +232,6 @@ export default function CaptureScreen({ onAdd, user }) {
             <img src={imageData} alt="preview"
               style={{ width: '100%', borderRadius: 10, maxHeight: 140, objectFit: 'contain', background: 'var(--card)', opacity: 0.8 }} />
           )}
-
           {extracted && (
             <div style={{ background: 'var(--green-bg)', borderRadius: 10, padding: '10px 12px' }}>
               <p style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 500 }}>
@@ -202,7 +239,6 @@ export default function CaptureScreen({ onAdd, user }) {
               </p>
             </div>
           )}
-
           {/* Monto */}
           <div>
             <label style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6, display: 'block' }}>MONTO *</label>
@@ -213,7 +249,6 @@ export default function CaptureScreen({ onAdd, user }) {
               style={{ fontSize: 24, fontWeight: 600, textAlign: 'center' }}
             />
           </div>
-
           {/* Descripción */}
           <div>
             <label style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6, display: 'block' }}>DESCRIPCIÓN</label>
@@ -232,7 +267,6 @@ export default function CaptureScreen({ onAdd, user }) {
               }}
             />
           </div>
-
           {/* Categoría */}
           <div>
             <label style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6, display: 'block' }}>
@@ -248,7 +282,6 @@ export default function CaptureScreen({ onAdd, user }) {
               ))}
             </select>
           </div>
-
           {/* Subcategoría */}
           {form.categoriaId && (
             <div>
@@ -263,7 +296,6 @@ export default function CaptureScreen({ onAdd, user }) {
               </select>
             </div>
           )}
-
           {/* Cuenta */}
           <div>
             <label style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6, display: 'block' }}>CUENTA</label>
@@ -284,7 +316,6 @@ export default function CaptureScreen({ onAdd, user }) {
               ))}
             </div>
           </div>
-
           {/* Usuario */}
           <div>
             <label style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6, display: 'block' }}>QUIEN PAGA</label>
@@ -305,9 +336,7 @@ export default function CaptureScreen({ onAdd, user }) {
               ))}
             </div>
           </div>
-
           {error && <p style={{ color: 'var(--red)', fontSize: 12 }}>{error}</p>}
-
           <button className="btn btn-primary" onClick={handleSave} style={{ width: '100%', marginTop: 4 }}>
             Guardar gasto
           </button>
@@ -332,6 +361,25 @@ export default function CaptureScreen({ onAdd, user }) {
         </div>
       )}
     </div>
+  )
+}
+
+function EyeIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+      <circle cx="12" cy="12" r="3"/>
+    </svg>
+  )
+}
+
+function EyeOffIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/>
+      <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/>
+      <line x1="1" y1="1" x2="23" y2="23"/>
+    </svg>
   )
 }
 
