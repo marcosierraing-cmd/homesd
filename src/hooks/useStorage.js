@@ -1,100 +1,165 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { readFromDrive, writeToDrive, getAccessToken } from '../services/driveService';
 
-const STORAGE_KEY = 'homesd_v1'
+const LOCAL_CACHE_KEY = 'homesd_cache_v2';
+const SYNC_INTERVAL_MS = 30_000;
 
-const defaultData = {
-  user: null,
+const DEFAULT_DATA = {
   transactions: [],
   budgetOverrides: {},
-  settings: {
-    notificationsEnabled: false,
-    alertThreshold: 0.8,
+  lastSync: '',
+};
+
+function loadCache() {
+  try {
+    const raw = localStorage.getItem(LOCAL_CACHE_KEY);
+    return raw ? JSON.parse(raw) : DEFAULT_DATA;
+  } catch {
+    return DEFAULT_DATA;
   }
+}
+
+function saveCache(data) {
+  try {
+    localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(data));
+  } catch {}
 }
 
 export function useStorage() {
-  const [data, setDataState] = useState(() => {
+  const [data, setData] = useState(loadCache);
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState(null);
+  const [online, setOnline] = useState(navigator.onLine);
+  const pendingRef = useRef(false);
+
+  useEffect(() => {
+    const up = () => setOnline(true);
+    const dn = () => setOnline(false);
+    window.addEventListener('online', up);
+    window.addEventListener('offline', dn);
+    return () => {
+      window.removeEventListener('online', up);
+      window.removeEventListener('offline', dn);
+    };
+  }, []);
+
+  const fetchFromDrive = useCallback(async ({ silent = false } = {}) => {
+    if (!online || !getAccessToken()) return;
+    if (!silent) setSyncing(true);
     try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      return stored ? { ...defaultData, ...JSON.parse(stored) } : defaultData
-    } catch { return defaultData }
-  })
-
-  const setData = useCallback((updater) => {
-    setDataState(prev => {
-      const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater }
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)) } catch {}
-      return next
-    })
-  }, [])
-
-  const addTransaction = useCallback((tx) => {
-    const newTx = {
-      id: Date.now().toString(),
-      timestamp: new Date().toISOString(),
-      ...tx
+      const driveData = await readFromDrive();
+      setData(driveData);
+      saveCache(driveData);
+      setError(null);
+    } catch (err) {
+      if (err.message === 'TOKEN_EXPIRED') {
+        setError('Sesión expirada — vuelve a iniciar sesión');
+      } else {
+        console.warn('[useStorage] fetch:', err.message);
+        setError(err.message);
+      }
+    } finally {
+      if (!silent) setSyncing(false);
     }
-    setData(prev => ({ ...prev, transactions: [newTx, ...prev.transactions] }))
-    return newTx
-  }, [setData])
+  }, [online]);
 
-  const updateTransaction = useCallback((id, updates) => {
-    setData(prev => ({
-      ...prev,
-      transactions: prev.transactions.map(t => t.id === id ? { ...t, ...updates } : t)
-    }))
-  }, [setData])
+  const saveToDrive = useCallback(async (newData) => {
+    setData(newData);
+    saveCache(newData);
 
-  const deleteTransaction = useCallback((id) => {
-    setData(prev => ({
-      ...prev,
-      transactions: prev.transactions.filter(t => t.id !== id)
-    }))
-  }, [setData])
+    if (!online || !getAccessToken()) {
+      pendingRef.current = true;
+      return;
+    }
 
-  const setUser = useCallback((user) => {
-    setData(prev => ({ ...prev, user }))
-  }, [setData])
+    setSyncing(true);
+    try {
+      const lastSync = await writeToDrive(newData);
+      const updated = { ...newData, lastSync };
+      setData(updated);
+      saveCache(updated);
+      pendingRef.current = false;
+      setError(null);
+    } catch (err) {
+      console.warn('[useStorage] save:', err.message);
+      setError(err.message);
+      pendingRef.current = true;
+    } finally {
+      setSyncing(false);
+    }
+  }, [online]);
 
-  const logout = useCallback(() => {
-    setData(prev => ({ ...prev, user: null }))
-  }, [setData])
+  useEffect(() => {
+    if (online && pendingRef.current && getAccessToken()) {
+      saveToDrive(data);
+    }
+  }, [online]); // eslint-disable-line
+
+  useEffect(() => {
+    fetchFromDrive();
+  }, []); // eslint-disable-line
+
+  useEffect(() => {
+    const id = setInterval(() => fetchFromDrive({ silent: true }), SYNC_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [fetchFromDrive]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') fetchFromDrive({ silent: true });
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [fetchFromDrive]);
+
+  const addTransaction = useCallback(async (transaction) => {
+    const newTx = {
+      ...transaction,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      createdAt: new Date().toISOString(),
+    };
+    await saveToDrive({
+      ...data,
+      transactions: [newTx, ...data.transactions],
+    });
+    return newTx;
+  }, [data, saveToDrive]);
+
+  const deleteTransaction = useCallback(async (id) => {
+    await saveToDrive({
+      ...data,
+      transactions: data.transactions.filter(t => t.id !== id),
+    });
+  }, [data, saveToDrive]);
+
+  const updateTransaction = useCallback(async (id, changes) => {
+    await saveToDrive({
+      ...data,
+      transactions: data.transactions.map(t =>
+        t.id === id ? { ...t, ...changes, updatedAt: new Date().toISOString() } : t
+      ),
+    });
+  }, [data, saveToDrive]);
+
+  const updateBudgetOverride = useCallback(async (category, amount) => {
+    await saveToDrive({
+      ...data,
+      budgetOverrides: { ...data.budgetOverrides, [category]: amount },
+    });
+  }, [data, saveToDrive]);
 
   return {
-    data,
-    setData,
+    transactions: data.transactions ?? [],
+    budgetOverrides: data.budgetOverrides ?? {},
+    lastSync: data.lastSync ?? '',
+    syncing,
+    error,
+    online,
+    hasPendingChanges: pendingRef.current,
     addTransaction,
-    updateTransaction,
     deleteTransaction,
-    setUser,
-    logout,
-    transactions: data.transactions,
-    user: data.user,
-    settings: data.settings,
-  }
-}
-
-export function getQuincenaGastado(transactions, categoriaId, subcategoriaId, quincena, mes) {
-  return transactions
-    .filter(t => {
-      const d = new Date(t.timestamp)
-      const tMes = d.getMonth()
-      const tQ = d.getDate() <= 15 ? 1 : 2
-      const mesActual = new Date().getMonth()
-      return t.categoriaId === categoriaId
-        && (!subcategoriaId || t.subcategoriaId === subcategoriaId)
-        && tMes === (mes ?? mesActual)
-        && tQ === quincena
-    })
-    .reduce((sum, t) => sum + (t.monto || 0), 0)
-}
-
-export function getMesGastado(transactions, categoriaId, mes) {
-  return transactions
-    .filter(t => {
-      const d = new Date(t.timestamp)
-      const mesActual = new Date().getMonth()
-      return t.categoriaId === categoriaId && d.getMonth() === (mes ?? mesActual)
-    })
-    .reduce((sum, t) => sum + (t.monto || 0), 0)
+    updateTransaction,
+    updateBudgetOverride,
+    refresh: fetchFromDrive,
+  };
 }
