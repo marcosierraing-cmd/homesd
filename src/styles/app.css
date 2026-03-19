@@ -218,3 +218,12 @@ body {
   font-feature-settings: 'tnum';
   font-variant-numeric: tabular-nums;
 }
+/* Ocultar scrollbars en filtros horizontales */
+::-webkit-scrollbar {
+  display: none;
+}
+
+* {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
