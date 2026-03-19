@@ -155,32 +155,26 @@ export function useStorage() {
 }
 // ─── Helpers de cálculo (exportados para DashboardScreen) ─────────────────────
 
-export function getQuincenaGastado(transactions) {
-  const now = new Date();
-  const mes = now.getMonth();
-  const anio = now.getFullYear();
-  const dia = now.getDate();
-  const esQ1 = dia <= 15;
-
+export function getQuincenaGastado(transactions, catId = null, subId = null, quincena, mes) {
   return transactions
     .filter(t => {
-      const fecha = new Date(t.date || t.createdAt);
-      const mismoMes = fecha.getMonth() === mes && fecha.getFullYear() === anio;
-      const mismaQ = esQ1 ? fecha.getDate() <= 15 : fecha.getDate() > 15;
-      return mismoMes && mismaQ;
+      const fecha = new Date(t.timestamp || t.createdAt);
+      const tQ = fecha.getDate() <= 15 ? 1 : 2;
+      const mismoMes = fecha.getMonth() === mes;
+      const mismaQ = tQ === quincena;
+      const mismacat = !catId || t.categoriaId === catId;
+      const mismaSub = !subId || t.subcategoriaId === subId;
+      return mismoMes && mismaQ && mismacat && mismaSub;
     })
-    .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    .reduce((sum, t) => sum + (Number(t.monto) || 0), 0);
 }
 
-export function getMesGastado(transactions) {
-  const now = new Date();
-  const mes = now.getMonth();
-  const anio = now.getFullYear();
-
+export function getMesGastado(transactions, catId = null, mes) {
   return transactions
     .filter(t => {
-      const fecha = new Date(t.date || t.createdAt);
-      return fecha.getMonth() === mes && fecha.getFullYear() === anio;
+      const fecha = new Date(t.timestamp || t.createdAt);
+      const mismacat = !catId || t.categoriaId === catId;
+      return fecha.getMonth() === mes && mismacat;
     })
-    .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    .reduce((sum, t) => sum + (Number(t.monto) || 0), 0);
 }
