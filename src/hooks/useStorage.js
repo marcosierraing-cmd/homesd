@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { readFromDrive, writeToDrive, getAccessToken } from '../services/driveService';
 
 const LOCAL_CACHE_KEY = 'homesd_cache_v2';
-const SYNC_INTERVAL_MS = 30_000;
+const SYNC_INTERVAL_MS = 30000;
 
 const DEFAULT_DATA = {
   transactions: [],
@@ -14,7 +14,7 @@ function loadCache() {
   try {
     const raw = localStorage.getItem(LOCAL_CACHE_KEY);
     return raw ? JSON.parse(raw) : DEFAULT_DATA;
-  } catch {
+  } catch (_e) {
     return DEFAULT_DATA;
   }
 }
@@ -22,7 +22,7 @@ function loadCache() {
 function saveCache(data) {
   try {
     localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(data));
-  } catch {}
+  } catch (_e) {}
 }
 
 export function useStorage() {
