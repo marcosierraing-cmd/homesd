@@ -14,56 +14,23 @@ import BottomNav from './components/BottomNav.jsx'
 
 export default function App() {
   const [user, setUser] = useState(null)
-  const {
-    transactions,
-    addTransaction,
-    updateTransaction,
-    deleteTransaction,
-    budgetOverrides,
-    updateBudgetOverride,
-    refresh,
-  } = useStorage()
+  const { transactions, addTransaction, deleteTransaction, budgetOverrides, updateBudgetOverride, refresh } = useStorage()
 
-  const logout = () => {
-    clearAccessToken()
-    setUser(null)
-  }
+  const logout = () => { clearAccessToken(); setUser(null) }
+  const handleLogin = (userData) => { setUser(userData); setTimeout(() => refresh(), 500) }
 
-  const handleLogin = (userData) => {
-    setUser(userData)
-    setTimeout(() => refresh(), 500)
-  }
-
-  if (!user) {
-    return <LoginScreen onLogin={handleLogin} />
-  }
+  if (!user) return <LoginScreen onLogin={handleLogin} />
 
   return (
     <PrivacyProvider>
       <BrowserRouter>
         <Routes>
-          {/* Pantalla inicial → Registrar */}
           <Route path="/" element={<Navigate to="/capture" replace />} />
-          <Route path="/dashboard" element={
-            <DashboardScreen transactions={transactions} user={user} />
-          } />
-          <Route path="/capture" element={
-            <CaptureScreen onAdd={addTransaction} user={user} />
-          } />
-          <Route path="/transactions" element={
-            <TransactionsScreen transactions={transactions} onDelete={deleteTransaction} />
-          } />
-          <Route path="/conciliation" element={
-            <ConciliationScreen transactions={transactions} />
-          } />
-          <Route path="/settings" element={
-            <SettingsScreen
-              user={user}
-              onLogout={logout}
-              budgetOverrides={budgetOverrides}
-              onUpdateBudgetOverride={updateBudgetOverride}
-            />
-          } />
+          <Route path="/dashboard" element={<DashboardScreen transactions={transactions} user={user} />} />
+          <Route path="/capture" element={<CaptureScreen onAdd={addTransaction} user={user} />} />
+          <Route path="/transactions" element={<TransactionsScreen transactions={transactions} onDelete={deleteTransaction} />} />
+          <Route path="/conciliation" element={<ConciliationScreen transactions={transactions} />} />
+          <Route path="/settings" element={<SettingsScreen user={user} onLogout={logout} budgetOverrides={budgetOverrides} onUpdateBudgetOverride={updateBudgetOverride} />} />
         </Routes>
         <BottomNav />
       </BrowserRouter>
