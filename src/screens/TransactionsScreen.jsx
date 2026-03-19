@@ -10,7 +10,7 @@ export default function TransactionsScreen({ transactions, onDelete }) {
 
   const filtered = useMemo(() => {
     return transactions.filter(t => {
-      const d = new Date(t.timestamp)
+      const d = new Date(t.timestamp || t.createdAt)
       const matchMes = d.getMonth() === filtromes
       const matchCat = filtrocat === 'all' || t.categoriaId === filtrocat
       return matchMes && matchCat
@@ -23,7 +23,7 @@ export default function TransactionsScreen({ transactions, onDelete }) {
   const grouped = useMemo(() => {
     const groups = {}
     filtered.forEach(t => {
-      const d = new Date(t.timestamp)
+      const d = new Date(t.timestamp || t.createdAt)
       const key = d.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' })
       if (!groups[key]) groups[key] = []
       groups[key].push(t)
