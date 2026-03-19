@@ -155,26 +155,7 @@ export default function LoginScreen({ onLogin }) {
           </div>
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div className="divider" style={{ flex: 1, margin: 0 }} />
-          <span style={{ fontSize: 11, color: 'var(--text3)' }}>acceso directo</span>
-          <div className="divider" style={{ flex: 1, margin: 0 }} />
-        </div>
-
-        <div style={{ display: 'flex', gap: 12 }}>
-          <button className="btn btn-secondary"
-            onClick={() => handleManualLogin('marco')}
-            disabled={loading}
-            style={{ flex: 1, fontSize: 13 }}>
-            <UserDot color="#DFCA8F" /> Marco
-          </button>
-          <button className="btn btn-secondary"
-            onClick={() => handleManualLogin('nayeli')}
-            disabled={loading}
-            style={{ flex: 1, fontSize: 13 }}>
-            <UserDot color="#5DCAA5" /> Nayeli
-          </button>
-        </div>
+        
       </div>
 
       {error && (
