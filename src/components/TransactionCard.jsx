@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { CATEGORIES, CUENTAS, USUARIOS } from '../data/budget.js'
+import { usePrivacy } from '../context/PrivacyContext.jsx'
 
 export default function TransactionCard({ tx, onDelete }) {
   const [confirmando, setConfirmando] = useState(false)
+  const { mask } = usePrivacy()
 
   const cat = CATEGORIES.find(c => c.id === tx.categoriaId)
   const cuenta = CUENTAS.find(c => c.id === tx.cuentaId)
@@ -29,7 +31,7 @@ export default function TransactionCard({ tx, onDelete }) {
         <div>
           <p style={{ fontSize: 13, color: 'var(--red)', fontWeight: 500 }}>¿Eliminar este gasto?</p>
           <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-            {tx.descripcion || cat?.name} · {mxn(tx.monto)}
+            {tx.descripcion || cat?.name} · {mask(mxn(tx.monto))}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -64,7 +66,6 @@ export default function TransactionCard({ tx, onDelete }) {
       alignItems: 'center',
       gap: 12,
     }}>
-      {/* Ícono categoría */}
       <div style={{
         width: 40, height: 40, borderRadius: 10, flexShrink: 0,
         background: cat ? `${cat.color}20` : 'var(--card2)',
@@ -75,7 +76,6 @@ export default function TransactionCard({ tx, onDelete }) {
         {cat?.icon || '💰'}
       </div>
 
-      {/* Info */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {tx.descripcion || cat?.name || 'Sin descripción'}
@@ -93,10 +93,9 @@ export default function TransactionCard({ tx, onDelete }) {
         </div>
       </div>
 
-      {/* Monto + usuario + borrar */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
-          {mxn(tx.monto)}
+          {mask(mxn(tx.monto))}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {usuario && (
