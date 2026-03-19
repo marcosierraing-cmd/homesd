@@ -1,9 +1,3 @@
-/**
- * driveService.js
- * Lee y escribe homesd_data.json en Google Drive usando el access_token
- * del usuario autenticado con Google OAuth. Sin backend, sin Service Account.
- */
-
 const DRIVE_FILES_API = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/files';
 const FILE_NAME = 'homesd_data.json';
@@ -15,7 +9,6 @@ const DEFAULT_DATA = {
   lastSync: '',
 };
 
-// ─── Token ────────────────────────────────────────────────────────────────────
 export function saveAccessToken(token) {
   sessionStorage.setItem('google_access_token', token);
 }
@@ -29,18 +22,13 @@ export function clearAccessToken() {
   sessionStorage.removeItem(CACHED_FILE_ID_KEY);
 }
 
-// ─── Buscar o crear el archivo JSON en Drive ──────────────────────────────────
 async function getFileId(accessToken) {
-  // Cache en sessionStorage para no buscar en cada operación
   const cached = sessionStorage.getItem(CACHED_FILE_ID_KEY);
   if (cached) return cached;
 
-  // Buscar por nombre
   const searchRes = await fetch(
     `${DRIVE_FILES_API}?q=name%3D'${FILE_NAME}'+and+trashed%3Dfalse&fields=files(id%2Cname)&spaces=drive`,
-    {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    }
+    { headers: { Authorization: `Bearer ${accessToken}` } }
   );
 
   if (!searchRes.ok) {
@@ -52,12 +40,10 @@ async function getFileId(accessToken) {
 
   if (files && files.length > 0) {
     sessionStorage.setItem(CACHED_FILE_ID_KEY, files[0].id);
-    console.log('[Drive] Archivo encontrado:', files[0].id);
     return files[0].id;
   }
 
-  // No existe → crear
-  console.log('[Drive] Creando archivo nuevo...');
+  // Crear archivo si no existe
   const boundary = 'homesd_boundary_' + Date.now();
   const metadata = JSON.stringify({ name: FILE_NAME, mimeType: 'application/json' });
   const body = JSON.stringify({ ...DEFAULT_DATA, lastSync: new Date().toISOString() });
@@ -90,11 +76,9 @@ async function getFileId(accessToken) {
 
   const { id } = await createRes.json();
   sessionStorage.setItem(CACHED_FILE_ID_KEY, id);
-  console.log('[Drive] Archivo creado:', id);
   return id;
 }
 
-// ─── Leer datos ───────────────────────────────────────────────────────────────
 export async function readFromDrive() {
   const accessToken = getAccessToken();
   if (!accessToken) throw new Error('No hay sesión de Google activa');
@@ -106,7 +90,6 @@ export async function readFromDrive() {
   });
 
   if (!res.ok) {
-    // Token expirado
     if (res.status === 401) {
       clearAccessToken();
       throw new Error('TOKEN_EXPIRED');
@@ -114,12 +97,9 @@ export async function readFromDrive() {
     throw new Error(`Drive read error: ${res.status}`);
   }
 
-  const data = await res.json();
-  console.log('[Drive] Leído OK —', data.transactions?.length ?? 0, 'transacciones');
-  return data;
+  return await res.json();
 }
 
-// ─── Escribir datos ───────────────────────────────────────────────────────────
 export async function writeToDrive(data) {
   const accessToken = getAccessToken();
   if (!accessToken) throw new Error('No hay sesión de Google activa');
@@ -153,6 +133,5 @@ export async function writeToDrive(data) {
     throw new Error(`Drive write error: ${err.error?.message || res.status}`);
   }
 
-  console.log('[Drive] Guardado OK —', payload.transactions.length, 'transacciones');
   return payload.lastSync;
 }
