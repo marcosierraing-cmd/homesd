@@ -1,134 +1,153 @@
-import { useState, useMemo } from 'react'
-import TransactionCard from '../components/TransactionCard.jsx'
-import { CATEGORIES } from '../data/budget.js'
-import { usePrivacy } from '../context/PrivacyContext.jsx'
+export const config = { runtime: 'edge' }
 
-export default function TransactionsScreen({ transactions, onDelete }) {
-  const [filtrocat, setFiltrocat] = useState('all')
-  const [filtromes, setFiltromes] = useState(new Date().getMonth())
+const SYSTEM_PROMPT = `Eres un asistente de finanzas personales para una familia mexicana.
+Extrae TODOS los movimientos del estado de cuenta bancario sin excepción.
 
-  const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+Para cada movimiento asigna un "tipo":
+- "gasto": cargos a comercios, servicios, personas externas, retiros de cajero para gastar
+- "ingreso": nómina, depósitos externos reales, pagos recibidos de terceros
+- "ignorar": cajitas (depósito/retiro), traspasos entre cuentas propias, pagos de tarjeta de crédito, SPEI entre cuentas propias
 
-  const filtered = useMemo(() => {
-    return transactions.filter(t => {
-      const d = new Date(t.timestamp || t.createdAt)
-      const matchMes = d.getMonth() === filtromes
-      const matchCat = filtrocat === 'all' || t.categoriaId === filtrocat
-      return matchMes && matchCat
+Reglas específicas para Nu:
+- "Depósito en cajita *" → ignorar
+- "Retiro de Cajita *" → ignorar  
+- "SPEI enviado" a cuenta propia → ignorar
+- "Transferencia" entre cuentas propias → ignorar
+- "Pago de tarjeta" → ignorar
+- Nómina o depósito externo grande (~$47,000+) → ingreso
+- Todo lo demás con cargo → gasto
+
+Para cada movimiento extrae:
+- fecha: formato YYYY-MM-DD
+- monto: numero sin signo, valor absoluto
+- descripcion: tal como aparece en el banco
+- tipo: "gasto" | "ingreso" | "ignorar"
+- categoria: para gastos: deuda, educacion, servicios, vivienda, hogar, alimentacion, restaurantes, transporte, salud, social, hijos, imprevistos. Para ingresos: "ingreso". Para ignorar: "ignorar"
+- subcategoria: vacio si no estas seguro
+- ya_registrado: false
+
+Reglas de categoria para gastos:
+- Coyotl, carniceria → alimentacion
+- Oscar Cano, Grupo MIC → alimentacion
+- La Comer, Costco, Walmart, Frescura → alimentacion
+- Luis Arturo → hogar
+- restaurante, brasa, taqueria → restaurantes
+- gasolina, gas → transporte
+- AT&T, Telmex, Telcel → servicios
+- GM Financial → deuda
+- STM Financial, Peugeot → deuda
+- Scotiabank prestamo → deuda
+- farmacia, doctor → salud
+- IMEX, colegio → educacion
+- estacionamiento → transporte
+- Todo lo demas → imprevistos
+
+Responde UNICAMENTE con JSON valido sin markdown:
+{"movimientos":[{"fecha":"2026-01-15","monto":1500,"descripcion":"COYOTL SA DE CV","tipo":"gasto","categoria":"alimentacion","subcategoria":"","ya_registrado":false}],"total_movimientos":0,"suma_total":0,"periodo":"periodo del estado"}`
+
+export default async function handler(req) {
+  if (req.method !== 'POST') {
+    return new Response('Method not allowed', { status: 405 })
+  }
+
+  const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
+  if (!ANTHROPIC_KEY) {
+    return new Response(JSON.stringify({ error: 'API key no configurada' }), {
+      status: 500, headers: { 'Content-Type': 'application/json' }
     })
-  }, [transactions, filtrocat, filtromes])
+  }
 
-  const totalFiltrado = filtered.reduce((s, t) => s + (t.monto || 0), 0)
-  const mxn = n => '$' + Math.round(n).toLocaleString('es-MX')
-  const { mask } = usePrivacy()
+  try {
+    const body = await req.json()
+    const { image, transactions } = body
 
-  const grouped = useMemo(() => {
-    const groups = {}
-    filtered.forEach(t => {
-      const d = new Date(t.timestamp || t.createdAt)
-      const key = d.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' })
-      if (!groups[key]) groups[key] = []
-      groups[key].push(t)
+    const isPDF = image && image.startsWith('data:application/pdf')
+    const mediaType = isPDF ? 'application/pdf' : ((image && image.split(';')[0].split(':')[1]) || 'image/jpeg')
+    const base64Data = image ? image.split(',')[1] : ''
+
+    const txResumen = (transactions || []).slice(0, 50).map(t =>
+      (t.descripcion || '') + ' $' + t.monto + ' ' + ((t.timestamp || t.createdAt || '').slice(0, 10))
+    ).join('\n')
+
+    const contentBlock = isPDF ? {
+      type: 'document',
+      source: { type: 'base64', media_type: 'application/pdf', data: base64Data }
+    } : {
+      type: 'image',
+      source: { type: 'base64', media_type: mediaType, data: base64Data }
+    }
+
+    const anthropicResp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'pdfs-2024-09-25',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4000,
+        stream: true,
+        system: SYSTEM_PROMPT,
+        messages: [{
+          role: 'user',
+          content: [
+            contentBlock,
+            { type: 'text', text: 'Extrae TODOS los movimientos y clasifica cada uno como gasto, ingreso o ignorar.\n\nYa registrados:\n' + (txResumen || 'Ninguno') }
+          ]
+        }]
+      })
     })
-    return groups
-  }, [filtered])
 
-  return (
-    <div className="screen" style={{ padding: '20px 0 80px' }}>
-      <div style={{ padding: '0 20px 16px' }}>
-        <h2 style={{ fontSize: 22, fontWeight: 600, marginBottom: 12 }}>Gastos</h2>
+    if (!anthropicResp.ok) {
+      const errText = await anthropicResp.text()
+      return new Response(JSON.stringify({ error: errText, movimientos: [] }), {
+        status: 200, headers: { 'Content-Type': 'application/json' }
+      })
+    }
 
-        {/* Filtro mes */}
-        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, marginBottom: 14 }}>
-          {meses.map((m, i) => (
-            <button key={i} onClick={() => setFiltromes(i)}
-              style={{
-                flexShrink: 0, padding: '6px 14px',
-                borderRadius: 20, border: 'none', cursor: 'pointer',
-                background: filtromes === i ? 'var(--gold)' : 'var(--card)',
-                color: filtromes === i ? '#0A1628' : 'var(--text3)',
-                fontSize: 12, fontWeight: filtromes === i ? 600 : 400,
-              }}>
-              {m}
-            </button>
-          ))}
-        </div>
+    const reader = anthropicResp.body.getReader()
+    const decoder = new TextDecoder()
+    let fullText = ''
+    let buffer = ''
 
-        {/* Filtro categoría */}
-        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
-          <button onClick={() => setFiltrocat('all')}
-            style={{
-              flexShrink: 0, padding: '5px 12px',
-              borderRadius: 16,
-              border: `0.5px solid ${filtrocat === 'all' ? 'var(--gold-dim)' : 'var(--border2)'}`,
-              background: filtrocat === 'all' ? 'var(--gold-bg)' : 'var(--card)',
-              color: filtrocat === 'all' ? 'var(--gold)' : 'var(--text3)',
-              fontSize: 11, cursor: 'pointer', fontWeight: 500,
-            }}>
-            Todos
-          </button>
-          {CATEGORIES.map(c => (
-            <button key={c.id} onClick={() => setFiltrocat(c.id)}
-              style={{
-                flexShrink: 0, padding: '5px 12px',
-                borderRadius: 16,
-                border: `0.5px solid ${filtrocat === c.id ? c.color + '80' : 'var(--border2)'}`,
-                background: filtrocat === c.id ? c.color + '18' : 'var(--card)',
-                color: filtrocat === c.id ? c.color : 'var(--text3)',
-                fontSize: 11, cursor: 'pointer',
-              }}>
-              {c.icon} {c.name}
-            </button>
-          ))}
-        </div>
-      </div>
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6).trim()
+          if (data === '[DONE]') continue
+          try {
+            const parsed = JSON.parse(data)
+            if (parsed.type === 'content_block_delta' && parsed.delta && parsed.delta.type === 'text_delta') {
+              fullText += parsed.delta.text
+            }
+          } catch (_e) {}
+        }
+      }
+    }
 
-      {/* Resumen */}
-      <div style={{
-        margin: '0 16px 16px',
-        padding: '12px 16px',
-        background: 'var(--card)',
-        borderRadius: 12,
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      }}>
-        <span style={{ fontSize: 12, color: 'var(--text3)' }}>
-          {filtered.length} transacciones
-        </span>
-        <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
-          {mask(mxn(totalFiltrado))}
-        </span>
-      </div>
+    let result
+    try {
+      const clean = fullText.replace(/```json\n?|\n?```/g, '').trim()
+      result = JSON.parse(clean)
+    } catch (e) {
+      result = { movimientos: [], total_movimientos: 0, suma_total: 0, periodo: '', raw: fullText.slice(0, 200) }
+    }
 
-      {/* Lista agrupada por día */}
-      <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {Object.keys(grouped).length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text3)' }}>
-            <p style={{ fontSize: 32, marginBottom: 12 }}>📋</p>
-            <p style={{ fontSize: 14 }}>Sin gastos registrados</p>
-            <p style={{ fontSize: 12, marginTop: 6 }}>Usa el botón de cámara para registrar</p>
-          </div>
-        ) : (
-          Object.entries(grouped).map(([fecha, txs]) => (
-            <div key={fecha}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 4px 6px' }}>
-                <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500 }}>{fecha}</span>
-                <span style={{ fontSize: 11, color: 'var(--text3)', fontVariantNumeric: 'tabular-nums' }}>
-                  {mask(mxn(txs.reduce((s, t) => s + t.monto, 0)))}
-                </span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {txs.map(tx => (
-                  <TransactionCard
-                    key={tx.id}
-                    tx={tx}
-                    onDelete={onDelete}
-                  />
-                ))}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  )
+    return new Response(JSON.stringify(result), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    })
+
+  } catch (err) {
+    return new Response(JSON.stringify({ error: err.message, movimientos: [] }), {
+      status: 200, headers: { 'Content-Type': 'application/json' }
+    })
+  }
 }
