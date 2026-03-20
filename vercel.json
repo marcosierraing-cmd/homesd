@@ -7,6 +7,14 @@
     "api/import.js": {
       "memory": 1024,
       "maxDuration": 60
+    },
+    "api/analyze.js": {
+      "memory": 512,
+      "maxDuration": 30
+    },
+    "api/conciliate.js": {
+      "memory": 512,
+      "maxDuration": 30
     }
   },
   "rewrites": [
