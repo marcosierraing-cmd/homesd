@@ -79,7 +79,7 @@ Responde ÚNICAMENTE con JSON válido, sin texto adicional:
         'anthropic-beta': 'pdfs-2024-09-25',
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-sonnet-4-5-20251001',
         max_tokens: 4000,
         system: systemPrompt,
         messages: [{
