@@ -160,18 +160,23 @@ export default function ConciliationScreen({ transactions, onAdd }) {
     if (!onAdd) return
     setGuardando(true)
     const aGuardar = resultados.movimientos.filter((_, i) => seleccionados[i])
-    let count = 0
-    for (const mov of aGuardar) {
-      await onAdd({
-        monto: mov.monto, descripcion: mov.descripcion,
-        categoriaId: mov.categoria || 'imprevistos', subcategoriaId: mov.subcategoria || '',
-        cuentaId: 'scotiabank', usuarioId: 'marco', nota: 'Importado de estado de cuenta',
-        timestamp: mov.fecha ? new Date(mov.fecha).toISOString() : new Date().toISOString(),
-        modoCaptura: 'estado_cuenta',
-      })
-      count++
-    }
-    setGuardados(count); setGuardando(false); setStep('done')
+    const nuevasTx = aGuardar.map(mov => ({
+      monto: mov.monto,
+      descripcion: mov.descripcion,
+      categoriaId: mov.categoria || 'imprevistos',
+      subcategoriaId: mov.subcategoria || '',
+      cuentaId: 'scotiabank',
+      usuarioId: 'marco',
+      nota: 'Importado de estado de cuenta',
+      timestamp: mov.fecha ? new Date(mov.fecha).toISOString() : new Date().toISOString(),
+      modoCaptura: 'estado_cuenta',
+      id: Date.now() + '-' + Math.random().toString(36).slice(2, 7) + '-' + Math.random().toString(36).slice(2, 5),
+      createdAt: new Date().toISOString(),
+    }))
+    await onAdd(nuevasTx)
+    setGuardados(nuevasTx.length)
+    setGuardando(false)
+    setStep('done')
   }
   const reset = () => { setStep('idle'); setImageData(null); setFileType(''); setPdfImages([]); setResultados(null); setSeleccionados({}); setGuardados(0); setProcessingMsg('') }
 
