@@ -7,19 +7,30 @@ const MODO_OPCIONES = [
   { id: 'conciliar', label: 'Conciliar' },
 ]
 
-// Convierte un PDF a imágenes usando pdf.js
+const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
+const PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector('script[src="' + src + '"]')) { resolve(); return }
+    const s = document.createElement('script')
+    s.src = src
+    s.onload = resolve
+    s.onerror = reject
+    document.head.appendChild(s)
+  })
+}
+
 async function pdfToImages(pdfData) {
-  const pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js')
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
-  
+  await loadScript(PDFJS_CDN)
+  const pdfjsLib = window.pdfjsLib
+  pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER
   const base64 = pdfData.split(',')[1]
   const binary = atob(base64)
   const bytes = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  
   const pdf = await pdfjsLib.getDocument({ data: bytes }).promise
   const images = []
-  
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i)
     const viewport = page.getViewport({ scale: 1.5 })
@@ -87,26 +98,22 @@ export default function ConciliationScreen({ transactions, onAdd }) {
 
   const procesarImportar = async () => {
     const isPDF = fileType === 'application/pdf'
-    const allResults = { movimientos: [], suma_total: 0, periodo: '' }
-    
+    const allMovimientos = []
+    let periodo = ''
+
     if (isPDF && pdfImages.length > 0) {
-      // Procesar cada página del PDF como imagen
       for (let i = 0; i < pdfImages.length; i++) {
-        setProcessingMsg('Procesando página ' + (i+1) + ' de ' + pdfImages.length + '...')
+        setProcessingMsg('Página ' + (i+1) + ' de ' + pdfImages.length + '...')
         const response = await fetch('/api/import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: pdfImages[i], transactions, pagina: i+1 })
+          body: JSON.stringify({ image: pdfImages[i], transactions })
         })
-        if (!response.ok) throw new Error('Error ' + response.status + ' en página ' + (i+1))
+        if (!response.ok) continue
         const data = await response.json()
-        if (data.movimientos) {
-          allResults.movimientos.push(...data.movimientos)
-          allResults.suma_total += data.suma_total || 0
-        }
-        if (i === 0 && data.periodo) allResults.periodo = data.periodo
+        if (data.movimientos) allMovimientos.push(...data.movimientos)
+        if (i === 0 && data.periodo) periodo = data.periodo
       }
-      allResults.total_movimientos = allResults.movimientos.length
     } else {
       setProcessingMsg('Procesando imagen...')
       const response = await fetch('/api/import', {
@@ -114,17 +121,18 @@ export default function ConciliationScreen({ transactions, onAdd }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image: imageData, transactions })
       })
-      if (!response.ok) throw new Error('Error ' + response.status)
-      const data = await response.json()
-      Object.assign(allResults, data)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.movimientos) allMovimientos.push(...data.movimientos)
+        if (data.periodo) periodo = data.periodo
+      }
     }
-    
-    setResultados(allResults)
-    if (allResults.movimientos) {
-      const sel = {}
-      allResults.movimientos.forEach((m, i) => { sel[i] = !m.ya_registrado })
-      setSeleccionados(sel)
-    }
+
+    const result = { movimientos: allMovimientos, total_movimientos: allMovimientos.length, suma_total: allMovimientos.reduce((s,m) => s+m.monto, 0), periodo }
+    setResultados(result)
+    const sel = {}
+    allMovimientos.forEach((m, i) => { sel[i] = !m.ya_registrado })
+    setSeleccionados(sel)
     setStep('results')
   }
 
@@ -220,7 +228,7 @@ export default function ConciliationScreen({ transactions, onAdd }) {
           {fileType === 'application/pdf' ? (
             <div style={{ background: 'var(--card)', borderRadius: 12, padding: '24px', marginBottom: 16, textAlign: 'center' }}>
               <p style={{ fontSize: 40, marginBottom: 8 }}>📄</p>
-              <p style={{ fontSize: 14, color: 'var(--text2)', fontWeight: 500 }}>PDF listo · {pdfImages.length} páginas</p>
+              <p style={{ fontSize: 14, color: 'var(--text2)', fontWeight: 500 }}>PDF listo · {pdfImages.length} página{pdfImages.length !== 1 ? 's' : ''}</p>
               <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>Claude procesará cada página</p>
             </div>
           ) : (
