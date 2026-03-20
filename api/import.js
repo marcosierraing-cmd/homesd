@@ -80,7 +80,13 @@ export default async function handler(req) {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 4000,
+        max_tokens: 8000,
+```
+
+**2. El prompt le dice a Claude que extraiga todo**, pero no le dice que no filtre por mes. Busca en el system prompt la línea que dice el periodo y agrega explícitamente:
+```
+Extrae TODOS los movimientos sin importar el mes al que pertenezcan. 
+Si el estado de cuenta abarca 2 meses, extrae los movimientos de ambos meses.
         stream: true,
         system: SYSTEM_PROMPT,
         messages: [{
