@@ -82,12 +82,15 @@ Responde ÚNICAMENTE con JSON válido, sin texto adicional:
         max_tokens: 4000,
         system: systemPrompt,
         messages: [{
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: { type: 'base64', media_type: mediaType, data: imageData }
-            },
+      role: 'user',
+      content: [
+        mediaType === 'application/pdf' ? {
+          type: 'document',
+          source: { type: 'base64', media_type: 'application/pdf', data: imageData }
+        } : {
+          type: 'image',
+          source: { type: 'base64', media_type: mediaType, data: imageData }
+        },
             {
               type: 'text',
               text: `Extrae TODOS los movimientos de gasto del estado de cuenta.
