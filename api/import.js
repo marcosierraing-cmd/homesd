@@ -2,6 +2,8 @@ export const config = { runtime: 'edge' }
 
 const SYSTEM_PROMPT = `Eres un asistente de finanzas personales para una familia mexicana.
 Extrae TODOS los movimientos del estado de cuenta bancario sin excepcion.
+Si el estado de cuenta abarca 2 meses, extrae los movimientos de AMBOS meses sin excepcion.
+No filtres por mes ni por periodo - extrae todo lo que aparezca en el documento.
 
 Clasifica cada movimiento con un campo "tipo":
 - "gasto": cargo a comercio, servicio, persona externa, retiro de cajero ATM
@@ -13,13 +15,13 @@ Reglas de clasificacion:
 - "SPEI enviado", "Traspaso a", "Transferencia a cuenta propia" → tipo: "ignorar"
 - "Pago de tarjeta", "Pago TC" → tipo: "ignorar"
 - Nomina, sueldo, deposito de empresa/patron → tipo: "ingreso"
-- SPEI recibido de persona o empresa externa → tipo: "ingreso" (solo si no es traspaso propio)
+- SPEI recibido de persona o empresa externa → tipo: "ingreso"
 - Cualquier cargo a comercio, servicio, gasolina, super, restaurante → tipo: "gasto"
-- Retiro de cajero ATM → tipo: "gasto" (dinero que saliste a gastar)
+- Retiro de cajero ATM → tipo: "gasto"
 
 Reglas de categoria para gastos:
 - Coyotl, carniceria → alimentacion/coyotl
-- Oscar Cano, Grupo MIC → alimentacion/oscar  
+- Oscar Cano, Grupo MIC → alimentacion/oscar
 - La Comer, Costco, Walmart, Frescura → alimentacion/super
 - Luis Arturo → hogar
 - restaurante, brasa, taqueria, comida → restaurantes
@@ -33,7 +35,7 @@ Reglas de categoria para gastos:
 - estacionamiento → transporte
 - Todo lo demas → imprevistos
 
-Para ingresos usa categoria "ingreso" y subcategoria segun origen (nomina, freelance, etc).
+Para ingresos usa categoria "ingreso".
 
 Responde UNICAMENTE con JSON valido sin markdown:
 {"movimientos":[{"fecha":"2026-01-15","monto":1500,"descripcion":"COYOTL SA DE CV","tipo":"gasto","categoria":"alimentacion","subcategoria":"coyotl","ya_registrado":false}],"total_movimientos":0,"suma_total_gastos":0,"suma_total_ingresos":0,"periodo":"periodo del estado"}`
@@ -81,19 +83,13 @@ export default async function handler(req) {
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 8000,
-```
-
-**2. El prompt le dice a Claude que extraiga todo**, pero no le dice que no filtre por mes. Busca en el system prompt la línea que dice el periodo y agrega explícitamente:
-```
-Extrae TODOS los movimientos sin importar el mes al que pertenezcan. 
-Si el estado de cuenta abarca 2 meses, extrae los movimientos de ambos meses.
         stream: true,
         system: SYSTEM_PROMPT,
         messages: [{
           role: 'user',
           content: [
             contentBlock,
-            { type: 'text', text: 'Extrae TODOS los movimientos clasificando cada uno como gasto, ingreso o ignorar.\n\nYa registrados:\n' + (txResumen || 'Ninguno') }
+            { type: 'text', text: 'Extrae TODOS los movimientos de ambos meses si aplica. Clasifica cada uno como gasto, ingreso o ignorar.\n\nYa registrados:\n' + (txResumen || 'Ninguno') }
           ]
         }]
       })
