@@ -1,8 +1,31 @@
 import { useState, useMemo } from 'react'
 import SemaphoreCard from '../components/SemaphoreCard.jsx'
-import { CATEGORIES, INGRESO_QUINCENAL, getMesActual, getQuincenaActual, calcularTotalQ } from '../data/budget.js'
-import { getQuincenaGastado, getMesGastado } from '../hooks/useStorage.js'
+import { CATEGORIES, INGRESO_QUINCENAL } from '../data/budget.js'
 import { usePrivacy } from '../context/PrivacyContext.jsx'
+
+const getMesActual = () => ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][new Date().getMonth()]
+const getQuincenaActual = () => new Date().getDate() <= 15 ? 1 : 2
+const calcularTotalQ = (q) => CATEGORIES.reduce((s, cat) => s + cat.subcategories.reduce((ss, sub) => {
+  if (sub.type === 'liquidado' || sub.type === 'prepagado' || sub.type === 'pendiente') return ss
+  return ss + (q === 1 ? (sub.q1 || 0) : (sub.q2 || 0))
+}, 0), 0)
+
+const getQuincenaGastado = (transactions, catId, subId, quincena, mes) => {
+  return transactions.filter(t => {
+    if (t.tipo === 'ingreso') return false
+    const d = new Date(t.timestamp || t.createdAt)
+    const tQ = d.getDate() <= 15 ? 1 : 2
+    return d.getMonth() === mes && tQ === quincena && t.categoriaId === catId && (!subId || t.subcategoriaId === subId)
+  }).reduce((s, t) => s + (t.monto || 0), 0)
+}
+
+const getMesGastado = (transactions, catId, mes) => {
+  return transactions.filter(t => {
+    if (t.tipo === 'ingreso') return false
+    const d = new Date(t.timestamp || t.createdAt)
+    return d.getMonth() === mes && t.categoriaId === catId
+  }).reduce((s, t) => s + (t.monto || 0), 0)
+}
 
 export default function DashboardScreen({ transactions, user }) {
   const [vista, setVista] = useState('quincenal')
@@ -32,21 +55,14 @@ export default function DashboardScreen({ transactions, user }) {
 
   return (
     <div className="screen" style={{ padding: '0 0 80px' }}>
-      <div style={{ padding: '20px 20px 0', background: 'linear-gradient(180deg, var(--surface) 0%, transparent 100%)' }}>
+      <div style={{ padding: '20px 20px 0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
           <div>
             <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 2 }}>{mesNombre} 2026</p>
             <h1 className="serif" style={{ fontSize: 26, color: 'var(--gold)', lineHeight: 1.1 }}>Home SD</h1>
           </div>
           {user && (
-            <div style={{
-              width: 36, height: 36, borderRadius: '50%',
-              background: user.usuarioId === 'nayeli' ? 'rgba(93,202,165,0.2)' : 'rgba(223,202,143,0.2)',
-              border: '1.5px solid ' + (user.usuarioId === 'nayeli' ? '#5DCAA5' : 'var(--gold)'),
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 12, fontWeight: 600,
-              color: user.usuarioId === 'nayeli' ? '#5DCAA5' : 'var(--gold)',
-            }}>
+            <div style={{ width: 36, height: 36, borderRadius: '50%', background: user.usuarioId === 'nayeli' ? 'rgba(93,202,165,0.2)' : 'rgba(223,202,143,0.2)', border: '1.5px solid ' + (user.usuarioId === 'nayeli' ? '#5DCAA5' : 'var(--gold)'), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, color: user.usuarioId === 'nayeli' ? '#5DCAA5' : 'var(--gold)' }}>
               {user.name?.charAt(0)}
             </div>
           )}
@@ -54,7 +70,7 @@ export default function DashboardScreen({ transactions, user }) {
 
         <div style={{ display: 'flex', gap: 4, background: 'var(--card)', borderRadius: 10, padding: 3, marginBottom: 16 }}>
           {['quincenal', 'mensual'].map(v => (
-            <button key={v} onClick={() => setVista(v)} style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', cursor: 'pointer', background: vista === v ? 'var(--card2)' : 'transparent', color: vista === v ? 'var(--gold)' : 'var(--text3)', fontSize: 13, fontWeight: 500, transition: 'all 0.2s ease' }}>
+            <button key={v} onClick={() => setVista(v)} style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', cursor: 'pointer', background: vista === v ? 'var(--card2)' : 'transparent', color: vista === v ? 'var(--gold)' : 'var(--text3)', fontSize: 13, fontWeight: 500 }}>
               {v === 'quincenal' ? 'Quincenal' : 'Mensual'}
             </button>
           ))}
@@ -63,72 +79,58 @@ export default function DashboardScreen({ transactions, user }) {
         {vista === 'quincenal' && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
             {[1, 2].map(q => (
-              <button key={q} onClick={() => setQuincena(q)} style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', cursor: 'pointer', background: quincena === q ? 'var(--gold-bg)' : 'var(--card)', borderWidth: quincena === q ? 1 : 0.5, borderStyle: 'solid', borderColor: quincena === q ? 'var(--gold-dim)' : 'var(--border2)', transition: 'all 0.2s ease' }}>
+              <button key={q} onClick={() => setQuincena(q)} style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: quincena === q ? '1px solid var(--gold-dim)' : '0.5px solid var(--border2)', cursor: 'pointer', background: quincena === q ? 'var(--gold-bg)' : 'var(--card)' }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: quincena === q ? 'var(--gold)' : 'var(--text2)' }}>Q{q}</div>
                 <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>{q === 1 ? 'Días 1-15' : 'Días 16-31'}</div>
-                <div style={{ fontSize: 9, color: 'var(--text3)' }}>{q === 1 ? 'nóm. 28 ant.' : 'nóm. 14 cte.'}</div>
               </button>
             ))}
           </div>
         )}
 
-        {/* Big summary card */}
-        <div className="card-glass" style={{ padding: '18px 20px', marginBottom: 6 }}>
+        <div className="card-glass" style={{ padding: '18px 20px', marginBottom: 8 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <p style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>
-                {vista === 'quincenal' ? 'Gastado Q' + quincena : 'Gastado este mes'}
-              </p>
-              <p className="serif amount" style={{ fontSize: 32, color: 'var(--text)', lineHeight: 1 }}>
-                {mask(mxn(totalGastado))}
-              </p>
-              <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>
-                de {mask(mxn(totalPresupuesto))} presupuestado
-              </p>
+              <p style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>{vista === 'quincenal' ? 'Gastado Q' + quincena : 'Gastado este mes'}</p>
+              <p className="serif amount" style={{ fontSize: 32, color: 'var(--text)', lineHeight: 1 }}>{mask(mxn(totalGastado))}</p>
+              <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>de {mask(mxn(totalPresupuesto))} presupuestado</p>
             </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: 22, fontWeight: 700, color: pctTotal >= 1 ? 'var(--red)' : pctTotal >= 0.8 ? 'var(--amber)' : 'var(--teal)' }}>
                 {mask(Math.round(pctTotal * 100) + '%')}
               </div>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: pctTotal >= 1 ? 'var(--red)' : pctTotal >= 0.8 ? 'var(--amber)' : 'var(--teal)', marginLeft: 'auto', marginTop: 4, boxShadow: '0 0 8px ' + (pctTotal >= 1 ? 'var(--red)' : pctTotal >= 0.8 ? 'var(--amber)' : 'var(--teal)') }} />
             </div>
           </div>
           <div className="progress-track" style={{ marginTop: 14, height: 8 }}>
             <div className="progress-fill" style={{ width: Math.min(pctTotal * 100, 100) + '%', background: pctTotal >= 1 ? '#E24B4A' : pctTotal >= 0.8 ? '#EF9F27' : '#1D9E75' }} />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>Disponible ppto: {mask(mxn(Math.max(totalPresupuesto - totalGastado, 0)))}</span>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>Ppto: {mask(mxn(INGRESO_QUINCENAL))}</span>
-          </div>
+          <p style={{ fontSize: 10, color: 'var(--text3)', marginTop: 6 }}>Disponible: {mask(mxn(Math.max(totalPresupuesto - totalGastado, 0)))}</p>
         </div>
 
-        {/* Saldo real con ingresos */}
         {totalIngresos > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
             <div style={{ background: 'var(--green-bg)', borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
               <p style={{ fontSize: 9, color: 'var(--teal)', marginBottom: 2 }}>INGRESOS</p>
-              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--teal)', fontVariantNumeric: 'tabular-nums' }}>{mask(mxn(totalIngresos))}</p>
+              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--teal)' }}>{mask(mxn(totalIngresos))}</p>
             </div>
             <div style={{ background: 'var(--red-bg)', borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
               <p style={{ fontSize: 9, color: 'var(--red)', marginBottom: 2 }}>GASTOS</p>
-              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--red)', fontVariantNumeric: 'tabular-nums' }}>{mask(mxn(totalGastado))}</p>
+              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--red)' }}>{mask(mxn(totalGastado))}</p>
             </div>
             <div style={{ background: saldoReal >= 0 ? 'var(--green-bg)' : 'var(--red-bg)', borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
               <p style={{ fontSize: 9, color: saldoReal >= 0 ? 'var(--teal)' : 'var(--red)', marginBottom: 2 }}>SALDO</p>
-              <p style={{ fontSize: 13, fontWeight: 600, color: saldoReal >= 0 ? 'var(--teal)' : 'var(--red)', fontVariantNumeric: 'tabular-nums' }}>{mask(mxn(saldoReal))}</p>
+              <p style={{ fontSize: 13, fontWeight: 600, color: saldoReal >= 0 ? 'var(--teal)' : 'var(--red)' }}>{mask(mxn(saldoReal))}</p>
             </div>
           </div>
         )}
       </div>
 
-      {/* Category semaphores */}
       <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, letterSpacing: '0.06em', marginBottom: 4 }}>POR CATEGORÍA</p>
         {CATEGORIES.map(cat => {
           let presupuesto = 0
           cat.subcategories.forEach(sub => {
             if (sub.type === 'liquidado' || sub.type === 'prepagado' || sub.type === 'pendiente') return
-            presupuesto += vista === 'quincenal' ? (quincena === 1 ? sub.q1 : sub.q2) : (sub.q1 + sub.q2)
+            presupuesto += vista === 'quincenal' ? (quincena === 1 ? (sub.q1 || 0) : (sub.q2 || 0)) : ((sub.q1 || 0) + (sub.q2 || 0))
           })
           if (presupuesto === 0) return null
           const gastado = vista === 'quincenal'
