@@ -13,7 +13,7 @@ export default function TransactionsScreen({ transactions, onDelete }) {
   const mxn = n => '$' + Math.round(n || 0).toLocaleString('es-MX')
 
   const filtradas = useMemo(() => {
-    return transactions.filter(t => {
+    return transactions.filter(t => t && t.id).filter(t => {
       const d = new Date(t.timestamp || t.createdAt)
       if (d.getMonth() !== mesIdx) return false
       if (tipoFiltro === 'gastos' && t.tipo === 'ingreso') return false
@@ -36,7 +36,7 @@ export default function TransactionsScreen({ transactions, onDelete }) {
   // Agrupar por fecha
   const agrupadas = useMemo(() => {
     const grupos = {}
-    filtradas.forEach(t => {
+    filtradas.filter(t => t && t.id).forEach(t => {
       const d = new Date(t.timestamp || t.createdAt)
       const key = d.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' })
       if (!grupos[key]) grupos[key] = { label: key, txs: [], total: 0 }
