@@ -7,16 +7,64 @@ const MODO_OPCIONES = [
   { id: 'conciliar', label: 'Conciliar' },
 ]
 
+const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY
+
+const SYSTEM_PROMPT = `Eres un asistente de finanzas personales para una familia mexicana.
+Extrae TODOS los movimientos de cargo/débito (gastos) del estado de cuenta bancario.
+NO incluyas abonos, depósitos ni movimientos de entrada de dinero.
+
+Para cada movimiento extrae:
+- fecha: en formato YYYY-MM-DD si es posible, o DD/MM si no hay año
+- monto: número sin signo, solo el valor absoluto
+- descripcion: descripción del comercio/concepto tal como aparece en el banco
+- categoria: asigna la categoría más apropiada de esta lista exacta:
+  deuda, educacion, servicios, vivienda, hogar, alimentacion, restaurantes, transporte, salud, social, hijos, imprevistos
+- subcategoria: deja vacío "" si no estás seguro
+
+Reglas de autoasignación:
+- Coyotl, carnicería → alimentacion
+- Oscar Cano, Grupo MIC → alimentacion
+- La Comer, Costco, Walmart, Frescura → alimentacion
+- Luis Arturo → hogar
+- restaurante, brasa, taquería, comida → restaurantes
+- gasolina, gas, estación → transporte
+- AT&T, Telmex, Telcel → servicios
+- Claude, PlayStation, Microsoft, Netflix → servicios
+- GM Financial → deuda
+- STM Financial, Peugeot → deuda
+- Scotiabank préstamo → deuda
+- farmacia, doctor, consulta → salud
+- colegio, escuela, IMEX → educacion
+- estacionamiento, parking → transporte
+- Todo lo demás → imprevistos
+
+Responde ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown:
+{
+  "movimientos": [
+    {
+      "fecha": "2026-01-15",
+      "monto": 1500,
+      "descripcion": "COYOTL SA DE CV",
+      "categoria": "alimentacion",
+      "subcategoria": "coyotl",
+      "ya_registrado": false
+    }
+  ],
+  "total_movimientos": 0,
+  "suma_total": 0,
+  "periodo": "descripción del período del estado de cuenta"
+}`
+
 export default function ConciliationScreen({ transactions, onAdd }) {
   const fileRef = useRef()
   const [modo, setModo] = useState('importar')
   const [step, setStep] = useState('idle')
   const [imageData, setImageData] = useState(null)
+  const [fileType, setFileType] = useState('')
   const [resultados, setResultados] = useState(null)
   const [seleccionados, setSeleccionados] = useState({})
   const [guardando, setGuardando] = useState(false)
   const [guardados, setGuardados] = useState(0)
-  const [fileType, setFileType] = useState('')
   const { mask } = usePrivacy()
 
   const mxn = n => '$' + Math.round(n || 0).toLocaleString('es-MX')
@@ -37,24 +85,87 @@ export default function ConciliationScreen({ transactions, onAdd }) {
   const procesar = async () => {
     setStep('processing')
     try {
-      const endpoint = modo === 'importar' ? '/api/import' : '/api/conciliate'
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: imageData, transactions })
-      })
-      const data = await response.json()
-      setResultados(data)
-      if (modo === 'importar' && data.movimientos) {
-        const sel = {}
-        data.movimientos.forEach((m, i) => { sel[i] = !m.ya_registrado })
-        setSeleccionados(sel)
+      if (modo === 'importar') {
+        await procesarImportar()
+      } else {
+        await procesarConciliar()
       }
-      setStep('results')
     } catch (err) {
       setResultados({ error: err.message })
       setStep('results')
     }
+  }
+
+  const procesarImportar = async () => {
+    const isPDF = fileType === 'application/pdf'
+    const mediaType = isPDF ? 'application/pdf' : fileType || 'image/jpeg'
+    const base64Data = imageData.split(',')[1]
+
+    const txResumen = transactions.slice(0, 100).map(t =>
+      `${t.descripcion || ''} $${t.monto} ${(t.timestamp || t.createdAt)?.slice(0, 10)}`
+    ).join('\n')
+
+    const contentBlock = isPDF ? {
+      type: 'document',
+      source: { type: 'base64', media_type: 'application/pdf', data: base64Data }
+    } : {
+      type: 'image',
+      source: { type: 'base64', media_type: mediaType, data: base64Data }
+    }
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'pdfs-2024-09-25',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4000,
+        system: SYSTEM_PROMPT,
+        messages: [{
+          role: 'user',
+          content: [
+            contentBlock,
+            {
+              type: 'text',
+              text: `Extrae TODOS los movimientos de gasto del estado de cuenta.\n\nTransacciones ya registradas en la app (para marcar duplicados):\n${txResumen || 'Ninguna aún'}\n\nMarca "ya_registrado: true" si el movimiento ya aparece en la lista (mismo monto y descripción similar).`
+            }
+          ]
+        }]
+      })
+    })
+
+    if (!response.ok) {
+      const err = await response.json()
+      throw new Error(err.error?.message || `Error ${response.status}`)
+    }
+
+    const data = await response.json()
+    const text = data.content?.[0]?.text || '{}'
+    const clean = text.replace(/```json\n?|\n?```/g, '').trim()
+    const parsed = JSON.parse(clean)
+
+    setResultados(parsed)
+    if (parsed.movimientos) {
+      const sel = {}
+      parsed.movimientos.forEach((m, i) => { sel[i] = !m.ya_registrado })
+      setSeleccionados(sel)
+    }
+    setStep('results')
+  }
+
+  const procesarConciliar = async () => {
+    const response = await fetch('/api/conciliate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: imageData, transactions })
+    })
+    const data = await response.json()
+    setResultados(data)
+    setStep('results')
   }
 
   const toggleSeleccion = (i) => setSeleccionados(s => ({ ...s, [i]: !s[i] }))
@@ -97,7 +208,7 @@ export default function ConciliationScreen({ transactions, onAdd }) {
   }
 
   const reset = () => {
-    setStep('idle'); setImageData(null); setResultados(null)
+    setStep('idle'); setImageData(null); setFileType(''); setResultados(null)
     setSeleccionados({}); setGuardados(0)
   }
 
@@ -201,7 +312,7 @@ export default function ConciliationScreen({ transactions, onAdd }) {
             {modo === 'importar' ? 'Claude está leyendo el estado de cuenta...' : 'Analizando movimientos...'}
           </p>
           <p style={{ color: 'var(--text3)', fontSize: 12, marginTop: 8 }}>
-            {modo === 'importar' ? 'Extrayendo fechas, montos y categorías' : 'Cruzando banco vs registros'}
+            {modo === 'importar' ? 'Esto puede tomar 20-40 segundos' : 'Cruzando banco vs registros'}
           </p>
         </div>
       )}
