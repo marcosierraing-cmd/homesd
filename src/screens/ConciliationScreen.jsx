@@ -55,6 +55,14 @@ Responde ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown:
   "periodo": "descripción del período del estado de cuenta"
 }`
 
+import { CATEGORIES } from '../data/budget.js'
+import { usePrivacy } from '../context/PrivacyContext.jsx'
+
+const MODO_OPCIONES = [
+  { id: 'importar', label: 'Importar' },
+  { id: 'conciliar', label: 'Conciliar' },
+]
+
 export default function ConciliationScreen({ transactions, onAdd }) {
   const fileRef = useRef()
   const [modo, setModo] = useState('importar')
@@ -97,61 +105,17 @@ export default function ConciliationScreen({ transactions, onAdd }) {
   }
 
   const procesarImportar = async () => {
-  const response = await fetch('/api/import', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image: imageData, transactions })
-  })
-  if (!response.ok) throw new Error(`Error ${response.status}`)
-  const data = await response.json()
-  setResultados(data)
-  if (data.movimientos) {
-    const sel = {}
-    data.movimientos.forEach((m, i) => { sel[i] = !m.ya_registrado })
-    setSeleccionados(sel)
-  }
-  setStep('results')
-}
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch('/api/import', {
       method: 'POST',
-      headers: {
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01',
-        'anthropic-beta': 'pdfs-2024-09-25',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 4000,
-        system: SYSTEM_PROMPT,
-        messages: [{
-          role: 'user',
-          content: [
-            contentBlock,
-            {
-              type: 'text',
-              text: `Extrae TODOS los movimientos de gasto del estado de cuenta.\n\nTransacciones ya registradas en la app (para marcar duplicados):\n${txResumen || 'Ninguna aún'}\n\nMarca "ya_registrado: true" si el movimiento ya aparece en la lista (mismo monto y descripción similar).`
-            }
-          ]
-        }]
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: imageData, transactions })
     })
-
-    if (!response.ok) {
-      const err = await response.json()
-      throw new Error(err.error?.message || `Error ${response.status}`)
-    }
-
+    if (!response.ok) throw new Error('Error ' + response.status)
     const data = await response.json()
-    const text = data.content?.[0]?.text || '{}'
-    const clean = text.replace(/```json\n?|\n?```/g, '').trim()
-    const parsed = JSON.parse(clean)
-
-    setResultados(parsed)
-    if (parsed.movimientos) {
+    setResultados(data)
+    if (data.movimientos) {
       const sel = {}
-      parsed.movimientos.forEach((m, i) => { sel[i] = !m.ya_registrado })
+      data.movimientos.forEach((m, i) => { sel[i] = !m.ya_registrado })
       setSeleccionados(sel)
     }
     setStep('results')
@@ -196,7 +160,7 @@ export default function ConciliationScreen({ transactions, onAdd }) {
         subcategoriaId: mov.subcategoria || '',
         cuentaId: 'scotiabank',
         usuarioId: 'marco',
-        nota: `Importado de estado de cuenta`,
+        nota: 'Importado de estado de cuenta',
         timestamp: mov.fecha ? new Date(mov.fecha).toISOString() : new Date().toISOString(),
         modoCaptura: 'estado_cuenta',
       })
@@ -235,16 +199,10 @@ export default function ConciliationScreen({ transactions, onAdd }) {
                 }}>{m.label}</button>
             ))}
           </div>
-
           <div style={{ background: 'var(--card)', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
             {modo === 'importar' ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {[
-                  ['📸', 'Sube foto o PDF del estado de cuenta'],
-                  ['🤖', 'Claude extrae todos los movimientos con fecha y monto'],
-                  ['✅', 'Revisas, ajustas categorías y seleccionas cuáles guardar'],
-                  ['💾', 'Se guardan todos de un jalón en Drive'],
-                ].map(([icon, text]) => (
+                {[['📸','Sube foto o PDF del estado de cuenta'],['🤖','Claude extrae todos los movimientos'],['✅','Revisas y seleccionas cuáles guardar'],['💾','Se guardan en Drive']].map(([icon, text]) => (
                   <div key={icon} style={{ display: 'flex', gap: 10 }}>
                     <span style={{ fontSize: 14 }}>{icon}</span>
                     <span style={{ fontSize: 12, color: 'var(--text3)' }}>{text}</span>
@@ -252,24 +210,16 @@ export default function ConciliationScreen({ transactions, onAdd }) {
                 ))}
               </div>
             ) : (
-              <p style={{ fontSize: 12, color: 'var(--text2)' }}>
-                Sube el estado de cuenta y Claude cruza los movimientos del banco contra tus registros existentes. Detecta fugas sin ticket.
-              </p>
+              <p style={{ fontSize: 12, color: 'var(--text2)' }}>Sube el estado de cuenta y Claude cruza movimientos contra tus registros. Detecta fugas sin ticket.</p>
             )}
           </div>
-
           <input ref={fileRef} type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={handleFile} />
-          <button className="btn btn-primary" onClick={() => fileRef.current?.click()}
-            style={{ width: '100%', height: 80, flexDirection: 'column', gap: 8, marginBottom: 10 }}>
-            <span style={{ fontSize: 24 }}>📸</span>
-            <span>Foto del estado de cuenta</span>
+          <button className="btn btn-primary" onClick={() => fileRef.current?.click()} style={{ width: '100%', height: 80, flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 24 }}>📸</span><span>Foto del estado de cuenta</span>
           </button>
-          <button className="btn btn-secondary" onClick={() => fileRef.current?.click()}
-            style={{ width: '100%', height: 56, gap: 10 }}>
-            <span style={{ fontSize: 18 }}>📄</span>
-            <span style={{ fontSize: 13 }}>Subir PDF</span>
+          <button className="btn btn-secondary" onClick={() => fileRef.current?.click()} style={{ width: '100%', height: 56, gap: 10 }}>
+            <span style={{ fontSize: 18 }}>📄</span><span style={{ fontSize: 13 }}>Subir PDF</span>
           </button>
-
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 16 }}>
             <div style={{ background: 'var(--card)', borderRadius: 10, padding: '12px 14px' }}>
               <p style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4 }}>REGISTRADOS</p>
@@ -277,9 +227,7 @@ export default function ConciliationScreen({ transactions, onAdd }) {
             </div>
             <div style={{ background: 'var(--card)', borderRadius: 10, padding: '12px 14px' }}>
               <p style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4 }}>TOTAL</p>
-              <p style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
-                {mask(mxn(transactions.reduce((s, t) => s + (t.monto || 0), 0)))}
-              </p>
+              <p style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>{mask(mxn(transactions.reduce((s, t) => s + (t.monto || 0), 0)))}</p>
             </div>
           </div>
         </>
@@ -308,12 +256,8 @@ export default function ConciliationScreen({ transactions, onAdd }) {
       {step === 'processing' && (
         <div style={{ textAlign: 'center', padding: '60px 0' }}>
           <div style={{ width: 52, height: 52, borderRadius: '50%', border: '2px solid var(--gold-bg)', borderTopColor: 'var(--gold)', animation: 'spin 0.8s linear infinite', margin: '0 auto 20px' }} />
-          <p style={{ color: 'var(--text2)', fontSize: 15 }}>
-            {modo === 'importar' ? 'Claude está leyendo el estado de cuenta...' : 'Analizando movimientos...'}
-          </p>
-          <p style={{ color: 'var(--text3)', fontSize: 12, marginTop: 8 }}>
-            {modo === 'importar' ? 'Esto puede tomar 20-40 segundos' : 'Cruzando banco vs registros'}
-          </p>
+          <p style={{ color: 'var(--text2)', fontSize: 15 }}>{modo === 'importar' ? 'Claude está leyendo el estado de cuenta...' : 'Analizando movimientos...'}</p>
+          <p style={{ color: 'var(--text3)', fontSize: 12, marginTop: 8 }}>Esto puede tomar 30-60 segundos</p>
         </div>
       )}
 
@@ -332,41 +276,31 @@ export default function ConciliationScreen({ transactions, onAdd }) {
               </div>
             </div>
           </div>
-
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <button onClick={() => seleccionarTodos(true)} style={{ flex: 1, padding: '7px', borderRadius: 8, fontSize: 12, cursor: 'pointer', border: '0.5px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)' }}>Todos</button>
             <button onClick={() => seleccionarTodos(false)} style={{ flex: 1, padding: '7px', borderRadius: 8, fontSize: 12, cursor: 'pointer', border: '0.5px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)' }}>Ninguno</button>
             <button onClick={() => { const sel = {}; resultados.movimientos.forEach((m, i) => { sel[i] = !m.ya_registrado }); setSeleccionados(sel) }}
-              style={{ flex: 2, padding: '7px', borderRadius: 8, fontSize: 12, cursor: 'pointer', border: '0.5px solid var(--gold-dim)', background: 'var(--gold-bg)', color: 'var(--gold)' }}>
-              Solo nuevos
-            </button>
+              style={{ flex: 2, padding: '7px', borderRadius: 8, fontSize: 12, cursor: 'pointer', border: '0.5px solid var(--gold-dim)', background: 'var(--gold-bg)', color: 'var(--gold)' }}>Solo nuevos</button>
           </div>
-
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 80 }}>
             {resultados.movimientos.map((mov, i) => {
               const cat = CATEGORIES.find(c => c.id === mov.categoria)
               const sel = !!seleccionados[i]
               return (
                 <div key={i} onClick={() => toggleSeleccion(i)}
-                  style={{
-                    background: 'var(--card)', borderRadius: 12, padding: '12px 14px', cursor: 'pointer',
-                    border: `0.5px solid ${sel ? (cat?.color + '60' || 'var(--gold-dim)') : 'var(--border2)'}`,
-                    opacity: mov.ya_registrado && !sel ? 0.5 : 1,
-                  }}>
+                  style={{ background: 'var(--card)', borderRadius: 12, padding: '12px 14px', cursor: 'pointer', border: '0.5px solid ' + (sel ? (cat?.color + '60' || 'var(--gold-dim)') : 'var(--border2)'), opacity: mov.ya_registrado && !sel ? 0.5 : 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{ width: 20, height: 20, borderRadius: 6, flexShrink: 0, border: `1.5px solid ${sel ? 'var(--teal)' : 'var(--border)'}`, background: sel ? 'var(--teal)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ width: 20, height: 20, borderRadius: 6, flexShrink: 0, border: '1.5px solid ' + (sel ? 'var(--teal)' : 'var(--border)'), background: sel ? 'var(--teal)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       {sel && <span style={{ color: 'white', fontSize: 12 }}>✓</span>}
                     </div>
-                    <div style={{ width: 34, height: 34, borderRadius: 8, flexShrink: 0, background: cat ? `${cat.color}20` : 'var(--card2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>
-                      {cat?.icon || '💰'}
-                    </div>
+                    <div style={{ width: 34, height: 34, borderRadius: 8, flexShrink: 0, background: cat ? cat.color + '20' : 'var(--card2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>{cat?.icon || '💰'}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mov.descripcion}</p>
                       <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
                         <span style={{ fontSize: 10, color: 'var(--text3)' }}>{mov.fecha}</span>
                         {mov.ya_registrado && <span style={{ fontSize: 10, color: 'var(--teal)', background: 'var(--green-bg)', padding: '1px 6px', borderRadius: 6 }}>ya registrado</span>}
                         <select value={mov.categoria || ''} onChange={e => { e.stopPropagation(); cambiarCategoria(i, e.target.value) }} onClick={e => e.stopPropagation()}
-                          style={{ fontSize: 10, padding: '1px 4px', borderRadius: 6, border: `0.5px solid ${cat?.color || 'var(--border2)'}`, background: cat ? `${cat.color}15` : 'var(--card)', color: cat?.color || 'var(--text3)', cursor: 'pointer' }}>
+                          style={{ fontSize: 10, padding: '1px 4px', borderRadius: 6, border: '0.5px solid ' + (cat?.color || 'var(--border2)'), background: cat ? cat.color + '15' : 'var(--card)', color: cat?.color || 'var(--text3)', cursor: 'pointer' }}>
                           <option value="">— categoría —</option>
                           {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
                         </select>
@@ -378,10 +312,9 @@ export default function ConciliationScreen({ transactions, onAdd }) {
               )
             })}
           </div>
-
           <div style={{ position: 'sticky', bottom: 80, paddingBottom: 8 }}>
             <button className="btn btn-primary" onClick={guardarSeleccionados} disabled={guardando || countSeleccionados === 0} style={{ width: '100%', fontSize: 14 }}>
-              {guardando ? 'Guardando...' : `Guardar ${countSeleccionados} movimientos · ${mask(mxn(totalSeleccionado))}`}
+              {guardando ? 'Guardando...' : 'Guardar ' + countSeleccionados + ' movimientos · ' + mask(mxn(totalSeleccionado))}
             </button>
           </div>
         </div>
@@ -390,31 +323,13 @@ export default function ConciliationScreen({ transactions, onAdd }) {
       {step === 'results' && modo === 'conciliar' && resultados && (
         <div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 20 }}>
-            {[
-              { label: 'Cuadran', count: resultados.conciliados?.length || 0, color: 'var(--teal)', bg: 'var(--green-bg)' },
-              { label: 'Sin ticket', count: resultados.fugas?.length || 0, color: 'var(--red)', bg: 'var(--red-bg)' },
-              { label: 'Pendientes', count: resultados.pendientes?.length || 0, color: 'var(--amber)', bg: 'var(--amber-bg)' },
-            ].map(s => (
+            {[{label:'Cuadran',count:resultados.conciliados?.length||0,color:'var(--teal)',bg:'var(--green-bg)'},{label:'Sin ticket',count:resultados.fugas?.length||0,color:'var(--red)',bg:'var(--red-bg)'},{label:'Pendientes',count:resultados.pendientes?.length||0,color:'var(--amber)',bg:'var(--amber-bg)'}].map(s => (
               <div key={s.label} style={{ background: s.bg, borderRadius: 10, padding: '12px 8px', textAlign: 'center' }}>
                 <p style={{ fontSize: 24, fontWeight: 700, color: s.color }}>{s.count}</p>
                 <p style={{ fontSize: 10, color: s.color }}>{s.label}</p>
               </div>
             ))}
           </div>
-          {(resultados.fugas?.length || 0) > 0 && (
-            <div style={{ marginBottom: 16 }}>
-              <p style={{ fontSize: 12, color: 'var(--red)', fontWeight: 500, marginBottom: 8 }}>Fugas sin ticket registrado</p>
-              {resultados.fugas.map((f, i) => (
-                <div key={i} style={{ background: 'var(--red-bg)', borderRadius: 8, padding: '10px 12px', marginBottom: 6 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 13, color: 'var(--text)' }}>{f.descripcion}</span>
-                    <span style={{ fontSize: 13, color: 'var(--red)', fontVariantNumeric: 'tabular-nums' }}>{mask(mxn(f.monto))}</span>
-                  </div>
-                  <span style={{ fontSize: 11, color: 'var(--text3)' }}>{f.fecha}</span>
-                </div>
-              ))}
-            </div>
-          )}
           <button className="btn btn-secondary" onClick={reset} style={{ width: '100%' }}>Nueva conciliación</button>
         </div>
       )}
