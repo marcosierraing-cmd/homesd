@@ -7,28 +7,68 @@ const MODO_OPCIONES = [
   { id: 'conciliar', label: 'Conciliar' },
 ]
 
+// Convierte un PDF a imágenes usando pdf.js
+async function pdfToImages(pdfData) {
+  const pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js')
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+  
+  const base64 = pdfData.split(',')[1]
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  
+  const pdf = await pdfjsLib.getDocument({ data: bytes }).promise
+  const images = []
+  
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i)
+    const viewport = page.getViewport({ scale: 1.5 })
+    const canvas = document.createElement('canvas')
+    canvas.width = viewport.width
+    canvas.height = viewport.height
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+    images.push(canvas.toDataURL('image/jpeg', 0.8))
+  }
+  return images
+}
+
 export default function ConciliationScreen({ transactions, onAdd }) {
   const fileRef = useRef()
   const [modo, setModo] = useState('importar')
   const [step, setStep] = useState('idle')
   const [imageData, setImageData] = useState(null)
   const [fileType, setFileType] = useState('')
+  const [pdfImages, setPdfImages] = useState([])
   const [resultados, setResultados] = useState(null)
   const [seleccionados, setSeleccionados] = useState({})
   const [guardando, setGuardando] = useState(false)
   const [guardados, setGuardados] = useState(0)
+  const [processingMsg, setProcessingMsg] = useState('')
   const { mask } = usePrivacy()
 
   const mxn = n => '$' + Math.round(n || 0).toLocaleString('es-MX')
 
-  const handleFile = (e) => {
+  const handleFile = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = ev => {
-      setImageData(ev.target.result)
+    reader.onload = async (ev) => {
+      const data = ev.target.result
+      setImageData(data)
       setFileType(file.type)
-      setStep('preview')
+      if (file.type === 'application/pdf') {
+        setStep('converting')
+        try {
+          const imgs = await pdfToImages(data)
+          setPdfImages(imgs)
+          setStep('preview')
+        } catch (err) {
+          console.error('PDF conversion error:', err)
+          setStep('preview')
+        }
+      } else {
+        setStep('preview')
+      }
     }
     reader.readAsDataURL(file)
     e.target.value = ''
@@ -46,17 +86,43 @@ export default function ConciliationScreen({ transactions, onAdd }) {
   }
 
   const procesarImportar = async () => {
-    const response = await fetch('/api/import', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: imageData, transactions })
-    })
-    if (!response.ok) throw new Error('Error ' + response.status)
-    const data = await response.json()
-    setResultados(data)
-    if (data.movimientos) {
+    const isPDF = fileType === 'application/pdf'
+    const allResults = { movimientos: [], suma_total: 0, periodo: '' }
+    
+    if (isPDF && pdfImages.length > 0) {
+      // Procesar cada página del PDF como imagen
+      for (let i = 0; i < pdfImages.length; i++) {
+        setProcessingMsg('Procesando página ' + (i+1) + ' de ' + pdfImages.length + '...')
+        const response = await fetch('/api/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: pdfImages[i], transactions, pagina: i+1 })
+        })
+        if (!response.ok) throw new Error('Error ' + response.status + ' en página ' + (i+1))
+        const data = await response.json()
+        if (data.movimientos) {
+          allResults.movimientos.push(...data.movimientos)
+          allResults.suma_total += data.suma_total || 0
+        }
+        if (i === 0 && data.periodo) allResults.periodo = data.periodo
+      }
+      allResults.total_movimientos = allResults.movimientos.length
+    } else {
+      setProcessingMsg('Procesando imagen...')
+      const response = await fetch('/api/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: imageData, transactions })
+      })
+      if (!response.ok) throw new Error('Error ' + response.status)
+      const data = await response.json()
+      Object.assign(allResults, data)
+    }
+    
+    setResultados(allResults)
+    if (allResults.movimientos) {
       const sel = {}
-      data.movimientos.forEach((m, i) => { sel[i] = !m.ya_registrado })
+      allResults.movimientos.forEach((m, i) => { sel[i] = !m.ya_registrado })
       setSeleccionados(sel)
     }
     setStep('results')
@@ -99,7 +165,7 @@ export default function ConciliationScreen({ transactions, onAdd }) {
     }
     setGuardados(count); setGuardando(false); setStep('done')
   }
-  const reset = () => { setStep('idle'); setImageData(null); setFileType(''); setResultados(null); setSeleccionados({}); setGuardados(0) }
+  const reset = () => { setStep('idle'); setImageData(null); setFileType(''); setPdfImages([]); setResultados(null); setSeleccionados({}); setGuardados(0); setProcessingMsg('') }
 
   const totalSeleccionado = resultados?.movimientos ? resultados.movimientos.filter((_, i) => seleccionados[i]).reduce((s, m) => s + (m.monto || 0), 0) : 0
   const countSeleccionados = Object.values(seleccionados).filter(Boolean).length
@@ -116,15 +182,11 @@ export default function ConciliationScreen({ transactions, onAdd }) {
           ))}
         </div>
         <div style={{ background: 'var(--card)', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
-          {modo === 'importar' ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {[['📸','Sube foto o PDF del estado de cuenta'],['🤖','Claude extrae todos los movimientos'],['✅','Revisas y seleccionas cuáles guardar'],['💾','Se guardan en Drive']].map(([icon, text]) => (
-                <div key={icon} style={{ display: 'flex', gap: 10 }}><span style={{ fontSize: 14 }}>{icon}</span><span style={{ fontSize: 12, color: 'var(--text3)' }}>{text}</span></div>
-              ))}
-            </div>
-          ) : (
-            <p style={{ fontSize: 12, color: 'var(--text2)' }}>Claude cruza los movimientos del banco contra tus registros. Detecta fugas sin ticket.</p>
-          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {[['📸','Sube foto o PDF del estado de cuenta'],['🤖','Claude extrae todos los movimientos'],['✅','Revisas y seleccionas cuáles guardar'],['💾','Se guardan en Drive']].map(([icon, text]) => (
+              <div key={icon} style={{ display: 'flex', gap: 10 }}><span style={{ fontSize: 14 }}>{icon}</span><span style={{ fontSize: 12, color: 'var(--text3)' }}>{text}</span></div>
+            ))}
+          </div>
         </div>
         <input ref={fileRef} type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={handleFile} />
         <button className="btn btn-primary" onClick={() => fileRef.current?.click()} style={{ width: '100%', height: 80, flexDirection: 'column', gap: 8, marginBottom: 10 }}>
@@ -145,13 +207,21 @@ export default function ConciliationScreen({ transactions, onAdd }) {
         </div>
       </>)}
 
-      {step === 'preview' && imageData && (
+      {step === 'converting' && (
+        <div style={{ textAlign: 'center', padding: '60px 0' }}>
+          <div style={{ width: 52, height: 52, borderRadius: '50%', border: '2px solid var(--gold-bg)', borderTopColor: 'var(--gold)', animation: 'spin 0.8s linear infinite', margin: '0 auto 20px' }} />
+          <p style={{ color: 'var(--text2)', fontSize: 15 }}>Preparando PDF...</p>
+          <p style={{ color: 'var(--text3)', fontSize: 12, marginTop: 8 }}>Convirtiendo páginas a imagen</p>
+        </div>
+      )}
+
+      {step === 'preview' && (
         <div>
           {fileType === 'application/pdf' ? (
             <div style={{ background: 'var(--card)', borderRadius: 12, padding: '24px', marginBottom: 16, textAlign: 'center' }}>
               <p style={{ fontSize: 40, marginBottom: 8 }}>📄</p>
-              <p style={{ fontSize: 14, color: 'var(--text2)', fontWeight: 500 }}>PDF listo para procesar</p>
-              <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>Claude leerá todos los movimientos</p>
+              <p style={{ fontSize: 14, color: 'var(--text2)', fontWeight: 500 }}>PDF listo · {pdfImages.length} páginas</p>
+              <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>Claude procesará cada página</p>
             </div>
           ) : (
             <img src={imageData} alt="preview" style={{ width: '100%', borderRadius: 12, marginBottom: 16, maxHeight: 300, objectFit: 'cover' }} />
@@ -166,8 +236,8 @@ export default function ConciliationScreen({ transactions, onAdd }) {
       {step === 'processing' && (
         <div style={{ textAlign: 'center', padding: '60px 0' }}>
           <div style={{ width: 52, height: 52, borderRadius: '50%', border: '2px solid var(--gold-bg)', borderTopColor: 'var(--gold)', animation: 'spin 0.8s linear infinite', margin: '0 auto 20px' }} />
-          <p style={{ color: 'var(--text2)', fontSize: 15 }}>{modo === 'importar' ? 'Claude está leyendo el estado de cuenta...' : 'Analizando movimientos...'}</p>
-          <p style={{ color: 'var(--text3)', fontSize: 12, marginTop: 8 }}>Esto puede tomar 30-60 segundos</p>
+          <p style={{ color: 'var(--text2)', fontSize: 15 }}>Claude está leyendo el estado de cuenta...</p>
+          <p style={{ color: 'var(--text3)', fontSize: 12, marginTop: 8 }}>{processingMsg || 'Extrayendo movimientos...'}</p>
         </div>
       )}
 
