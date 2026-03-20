@@ -97,21 +97,21 @@ export default function ConciliationScreen({ transactions, onAdd }) {
   }
 
   const procesarImportar = async () => {
-    const isPDF = fileType === 'application/pdf'
-    const mediaType = isPDF ? 'application/pdf' : fileType || 'image/jpeg'
-    const base64Data = imageData.split(',')[1]
-
-    const txResumen = transactions.slice(0, 100).map(t =>
-      `${t.descripcion || ''} $${t.monto} ${(t.timestamp || t.createdAt)?.slice(0, 10)}`
-    ).join('\n')
-
-    const contentBlock = isPDF ? {
-      type: 'document',
-      source: { type: 'base64', media_type: 'application/pdf', data: base64Data }
-    } : {
-      type: 'image',
-      source: { type: 'base64', media_type: mediaType, data: base64Data }
-    }
+  const response = await fetch('/api/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image: imageData, transactions })
+  })
+  if (!response.ok) throw new Error(`Error ${response.status}`)
+  const data = await response.json()
+  setResultados(data)
+  if (data.movimientos) {
+    const sel = {}
+    data.movimientos.forEach((m, i) => { sel[i] = !m.ya_registrado })
+    setSeleccionados(sel)
+  }
+  setStep('results')
+}
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
