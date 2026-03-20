@@ -16,6 +16,7 @@ export default function ConciliationScreen({ transactions, onAdd }) {
   const [seleccionados, setSeleccionados] = useState({})
   const [guardando, setGuardando] = useState(false)
   const [guardados, setGuardados] = useState(0)
+  const [fileType, setFileType] = useState('')
   const { mask } = usePrivacy()
 
   const mxn = n => '$' + Math.round(n || 0).toLocaleString('es-MX')
@@ -24,7 +25,11 @@ export default function ConciliationScreen({ transactions, onAdd }) {
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = ev => { setImageData(ev.target.result); setStep('preview') }
+    reader.onload = ev => {
+      setImageData(ev.target.result)
+      setFileType(file.type)
+      setStep('preview')
+    }
     reader.readAsDataURL(file)
     e.target.value = ''
   }
@@ -171,7 +176,15 @@ export default function ConciliationScreen({ transactions, onAdd }) {
 
       {step === 'preview' && imageData && (
         <div>
-          <img src={imageData} alt="preview" style={{ width: '100%', borderRadius: 12, marginBottom: 16, maxHeight: 300, objectFit: 'cover' }} />
+          {fileType === 'application/pdf' ? (
+            <div style={{ background: 'var(--card)', borderRadius: 12, padding: '24px', marginBottom: 16, textAlign: 'center' }}>
+              <p style={{ fontSize: 40, marginBottom: 8 }}>📄</p>
+              <p style={{ fontSize: 14, color: 'var(--text2)', fontWeight: 500 }}>PDF listo para procesar</p>
+              <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>Claude leerá todos los movimientos</p>
+            </div>
+          ) : (
+            <img src={imageData} alt="preview" style={{ width: '100%', borderRadius: 12, marginBottom: 16, maxHeight: 300, objectFit: 'cover' }} />
+          )}
           <div style={{ display: 'flex', gap: 10 }}>
             <button className="btn btn-secondary" onClick={reset} style={{ flex: 1 }}>Cambiar</button>
             <button className="btn btn-primary" onClick={procesar} style={{ flex: 2 }}>
