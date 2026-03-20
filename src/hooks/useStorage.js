@@ -108,15 +108,19 @@ export function useStorage() {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [fetchFromDrive]);
 
-  const addTransaction = useCallback(async (transaction) => {
-    const newTx = {
+ const addTransaction = useCallback(async (transaction) => {
+    const isArray = Array.isArray(transaction)
+    const newTxs = isArray ? transaction : [{
       ...transaction,
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       createdAt: new Date().toISOString(),
-    };
-    await saveToDrive({ ...data, transactions: [newTx, ...data.transactions] });
-    return newTx;
-  }, [data, saveToDrive]);
+    }]
+    await saveToDrive({
+      ...data,
+      transactions: [...newTxs, ...data.transactions],
+    })
+    return isArray ? newTxs : newTxs[0]
+  }, [data, saveToDrive])
 
   const deleteTransaction = useCallback(async (id) => {
     await saveToDrive({ ...data, transactions: data.transactions.filter(t => t.id !== id) });
