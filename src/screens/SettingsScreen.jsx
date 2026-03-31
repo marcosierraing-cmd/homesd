@@ -1,17 +1,23 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { BUDGET_VERSION, INGRESO_QUINCENAL, INGRESO_MENSUAL } from '../data/budget.js'
-import { calcularTotalQMerged } from '../utils/budgetMerge.js'
+import { BUDGET_VERSION, INGRESO_QUINCENAL, INGRESO_MENSUAL, CATEGORIES } from '../data/budget.js'
 import { usePrivacy } from '../context/PrivacyContext.jsx'
 
-export default function SettingsScreen({ user, onLogout, budgetOverrides = {}, onUpdateBudgetOverride }) {
+function calcularTotalQ(q) {
+  return CATEGORIES.reduce((s, cat) => s + cat.subcategories.reduce((ss, sub) => {
+    if (sub.type === 'liquidado' || sub.type === 'prepagado' || sub.type === 'pendiente') return ss
+    return ss + (q === 1 ? (sub.q1 || 0) : (sub.q2 || 0))
+  }, 0), 0)
+}
+
+export default function SettingsScreen({ user, onLogout, budgetOverrides = {}, onUpdateBudgetOverride, syncing, error, online }) {
   const [notif, setNotif] = useState(false)
   const { mask } = usePrivacy()
   const navigate = useNavigate()
   const mxn = n => '$' + Math.round(n).toLocaleString('es-MX')
 
-  const totalQ1 = calcularTotalQMerged(1, budgetOverrides)
-  const totalQ2 = calcularTotalQMerged(2, budgetOverrides)
+  const totalQ1 = calcularTotalQ(1)
+  const totalQ2 = calcularTotalQ(2)
   const totalMes = totalQ1 + totalQ2
 
   const requestNotifications = async () => {
@@ -24,6 +30,7 @@ export default function SettingsScreen({ user, onLogout, budgetOverrides = {}, o
     <div className="screen" style={{ padding: '20px 20px 80px' }}>
       <h2 style={{ fontSize: 22, fontWeight: 600, marginBottom: 20 }}>Configuración</h2>
 
+      {/* Usuario activo */}
       {user && (
         <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
           <div style={{
@@ -38,15 +45,33 @@ export default function SettingsScreen({ user, onLogout, budgetOverrides = {}, o
           </div>
           <div style={{ flex: 1 }}>
             <p style={{ fontWeight: 500 }}>{user.name}</p>
-            <p style={{ fontSize: 12, color: 'var(--text3)' }}>{user.email}</p>
+            <p style={{ fontSize: 12, color: 'var(--text3)' }}>Familia Sierra Dávila</p>
           </div>
-          <button className="btn btn-ghost" onClick={onLogout} style={{ fontSize: 12, color: 'var(--red)' }}>
+          <button className="btn btn-ghost" onClick={onLogout}
+            style={{ fontSize: 12, color: 'var(--red)' }}>
             Salir
           </button>
         </div>
       )}
 
-      {/* Botón editor de presupuesto */}
+      {/* Estado de sync */}
+      <div style={{ background: 'var(--card)', borderRadius: 12, padding: '12px 14px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: !online ? 'var(--red)' : syncing ? 'var(--amber)' : 'var(--teal)' }} />
+          <p style={{ fontSize: 13, color: 'var(--text2)' }}>
+            {!online ? 'Sin conexión' : syncing ? 'Sincronizando...' : 'Sincronizado con Supabase'}
+          </p>
+        </div>
+        <p style={{ fontSize: 10, color: 'var(--text3)' }}>Tiempo real ↔ Marco y Nayeli</p>
+      </div>
+
+      {error && (
+        <div style={{ background: 'var(--red-bg)', border: '0.5px solid var(--red)', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
+          <p style={{ fontSize: 12, color: 'var(--red)' }}>{error}</p>
+        </div>
+      )}
+
+      {/* Editor de presupuesto */}
       <button onClick={() => navigate('/budget-editor')}
         style={{
           width: '100%', padding: '14px 16px', borderRadius: 12, cursor: 'pointer',
@@ -58,15 +83,16 @@ export default function SettingsScreen({ user, onLogout, budgetOverrides = {}, o
           <span style={{ fontSize: 20 }}>📊</span>
           <div style={{ textAlign: 'left' }}>
             <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--gold)' }}>Editor de presupuesto</p>
-            <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>Editar categorías, montos y subcategorías</p>
+            <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>Editar categorías y montos</p>
           </div>
         </div>
         <span style={{ color: 'var(--gold)', fontSize: 18 }}>→</span>
       </button>
 
+      {/* Resumen presupuesto */}
       <div style={{ marginBottom: 20 }}>
         <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, letterSpacing: '0.06em', marginBottom: 10 }}>
-          RESUMEN DEL PRESUPUESTO BASE
+          RESUMEN DEL PRESUPUESTO
         </p>
         <div className="card">
           {[
@@ -85,31 +111,24 @@ export default function SettingsScreen({ user, onLogout, budgetOverrides = {}, o
         </div>
       </div>
 
+      {/* Alertas */}
       <div style={{ marginBottom: 20 }}>
         <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, letterSpacing: '0.06em', marginBottom: 10 }}>ALERTAS</p>
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <p style={{ fontSize: 13, fontWeight: 500 }}>Alerta al 80%</p>
-              <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>Notificación cuando una categoría llega al 80% del techo</p>
+              <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>Notificación cuando una categoría llega al 80%</p>
             </div>
             <button onClick={notif ? undefined : requestNotifications}
-              style={{
-                width: 44, height: 26, borderRadius: 13,
-                background: notif ? 'var(--teal)' : 'var(--card2)',
-                border: `0.5px solid ${notif ? 'var(--teal)' : 'var(--border)'}`,
-                position: 'relative', cursor: 'pointer', transition: 'all 0.2s ease',
-              }}>
-              <div style={{
-                width: 20, height: 20, borderRadius: '50%', background: 'white',
-                position: 'absolute', top: 3, transition: 'left 0.2s ease',
-                left: notif ? 21 : 3,
-              }} />
+              style={{ width: 44, height: 26, borderRadius: 13, background: notif ? 'var(--teal)' : 'var(--card2)', border: `0.5px solid ${notif ? 'var(--teal)' : 'var(--border)'}`, position: 'relative', cursor: 'pointer', transition: 'all 0.2s ease' }}>
+              <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'white', position: 'absolute', top: 3, transition: 'left 0.2s ease', left: notif ? 21 : 3 }} />
             </button>
           </div>
         </div>
       </div>
 
+      {/* Estado de deudas */}
       <div style={{ marginBottom: 20 }}>
         <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, letterSpacing: '0.06em', marginBottom: 10 }}>ESTADO DE DEUDAS</p>
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -132,10 +151,13 @@ export default function SettingsScreen({ user, onLogout, budgetOverrides = {}, o
         </div>
       </div>
 
+      {/* Footer */}
       <div style={{ padding: '16px', background: 'var(--card)', borderRadius: 12, textAlign: 'center' }}>
-        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--gold)', marginBottom: 4 }}>Home SD v1.0</p>
+        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--gold)', marginBottom: 4 }}>Home SD v2.0</p>
         <p style={{ fontSize: 11, color: 'var(--text3)' }}>Sierra Dávila · 2026</p>
-        <p style={{ fontSize: 10, color: 'var(--text3)', marginTop: 6 }}>Powered by Claude Haiku — datos seguros en Google Drive</p>
+        <p style={{ fontSize: 10, color: 'var(--text3)', marginTop: 6 }}>
+          Powered by Claude IA · Datos en Supabase
+        </p>
       </div>
     </div>
   )
