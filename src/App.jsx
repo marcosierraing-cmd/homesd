@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import './styles/app.css'
 import { useStorage } from './hooks/useStorage.js'
-import { clearAccessToken } from './services/driveService.js'
 import { PrivacyProvider } from './context/PrivacyContext.jsx'
 import LoginScreen from './screens/LoginScreen.jsx'
 import DashboardScreen from './screens/DashboardScreen.jsx'
@@ -13,21 +12,43 @@ import SettingsScreen from './screens/SettingsScreen.jsx'
 import BudgetEditorScreen from './screens/BudgetEditorScreen.jsx'
 import BottomNav from './components/BottomNav.jsx'
 
+// Auth persistente — igual que CRM Praxentia
+function getStoredUser() {
+  try {
+    const auth = localStorage.getItem('homesd_auth')
+    const user = localStorage.getItem('homesd_user')
+    return auth === '1' && user ? JSON.parse(user) : null
+  } catch { return null }
+}
+
 export default function App() {
-  const [user, setUser] = useState(null)
+  const [user, setUser] = useState(getStoredUser)
   const {
     transactions,
+    logros,
     addTransaction,
     deleteTransaction,
+    updateTransaction,
     budgetOverrides,
     updateBudgetOverride,
+    addLogro,
+    deleteLogro,
+    syncing,
+    error,
+    online,
     refresh,
   } = useStorage()
 
-  const logout = () => { clearAccessToken(); setUser(null) }
-  const handleLogin = (userData) => { setUser(userData); setTimeout(() => refresh(), 500) }
+  const logout = () => {
+    localStorage.removeItem('homesd_auth')
+    localStorage.removeItem('homesd_user')
+    setUser(null)
+  }
 
-  // Actualiza una clave específica dentro de budgetOverrides
+  const handleLogin = (userData) => {
+    setUser(userData)
+  }
+
   const handleUpdateBudgetOverride = async (key, value) => {
     await updateBudgetOverride(key, value)
   }
@@ -39,14 +60,49 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Navigate to="/capture" replace />} />
-          <Route path="/dashboard" element={<DashboardScreen transactions={transactions} user={user} budgetOverrides={budgetOverrides} />} />
-          <Route path="/capture" element={<CaptureScreen onAdd={addTransaction} user={user} />} />
-          <Route path="/transactions" element={<TransactionsScreen transactions={transactions} onDelete={deleteTransaction} />} />
-         <Route path="/conciliation" element={<ConciliationScreen transactions={transactions} onAdd={addTransaction} />} />
-          <Route path="/settings" element={<SettingsScreen user={user} onLogout={logout} budgetOverrides={budgetOverrides} onUpdateBudgetOverride={handleUpdateBudgetOverride} />} />
-          <Route path="/budget-editor" element={<BudgetEditorScreen budgetOverrides={budgetOverrides} onUpdateBudgetOverride={handleUpdateBudgetOverride} />} />
+          <Route path="/dashboard" element={
+            <DashboardScreen
+              transactions={transactions}
+              user={user}
+              budgetOverrides={budgetOverrides}
+              logros={logros}
+              addLogro={addLogro}
+              deleteLogro={deleteLogro}
+              syncing={syncing}
+              online={online}
+            />
+          } />
+          <Route path="/capture" element={
+            <CaptureScreen onAdd={addTransaction} user={user} />
+          } />
+          <Route path="/transactions" element={
+            <TransactionsScreen
+              transactions={transactions}
+              onDelete={deleteTransaction}
+            />
+          } />
+          <Route path="/conciliation" element={
+            <ConciliationScreen transactions={transactions} onAdd={addTransaction} />
+          } />
+          <Route path="/settings" element={
+            <SettingsScreen
+              user={user}
+              onLogout={logout}
+              budgetOverrides={budgetOverrides}
+              onUpdateBudgetOverride={handleUpdateBudgetOverride}
+              syncing={syncing}
+              error={error}
+              online={online}
+            />
+          } />
+          <Route path="/budget-editor" element={
+            <BudgetEditorScreen
+              budgetOverrides={budgetOverrides}
+              onUpdateBudgetOverride={handleUpdateBudgetOverride}
+            />
+          } />
         </Routes>
-        <BottomNav />
+        <BottomNav syncing={syncing} />
       </BrowserRouter>
     </PrivacyProvider>
   )
