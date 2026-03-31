@@ -1,113 +1,50 @@
-import { useState, useEffect, useRef } from 'react'
-import { saveAccessToken } from '../services/driveService'
+import { useState } from 'react'
 
-const ALLOWED_EMAILS = [
-  'marcosierraing@gmail.com',
-  'naye.davila.gonzalez@gmail.com',
+const APP_PASSWORD = import.meta.env.VITE_APP_PASSWORD || ''
+
+const USUARIOS = [
+  { id: 'marco',  name: 'Marco',  color: '#DFCA8F', initials: 'MA' },
+  { id: 'nayeli', name: 'Nayeli', color: '#5DCAA5', initials: 'NI' },
 ]
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
-const SCOPES = 'openid email profile https://www.googleapis.com/auth/drive.file'
-
 export default function LoginScreen({ onLogin }) {
+  const [password, setPassword] = useState('')
+  const [selectedUser, setSelectedUser] = useState('marco')
+  const [error, setError] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [googleReady, setGoogleReady] = useState(false)
-  const tokenClientRef = useRef(null)
 
-  useEffect(() => {
-    if (!GOOGLE_CLIENT_ID) return
-
-    const script = document.createElement('script')
-    script.src = 'https://accounts.google.com/gsi/client'
-    script.async = true
-    script.defer = true
-    script.onload = () => {
-      tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
-        client_id: GOOGLE_CLIENT_ID,
-        scope: SCOPES,
-        callback: handleTokenResponse,
-      })
-      setGoogleReady(true)
-    }
-    document.head.appendChild(script)
-    return () => {
-      try { document.head.removeChild(script) } catch {}
-    }
-  }, [])
-
-  const handleTokenResponse = async (tokenResponse) => {
-    if (tokenResponse.error) {
-      setError('Error al iniciar sesión con Google.')
-      setLoading(false)
+  const handleLogin = () => {
+    if (!password) return
+    if (password !== APP_PASSWORD && APP_PASSWORD !== '') {
+      setError(true)
+      setTimeout(() => setError(false), 2000)
       return
     }
-
-    try {
-      saveAccessToken(tokenResponse.access_token)
-
-      const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-        headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-      })
-      const userInfo = await userInfoRes.json()
-      const email = userInfo.email
-
-      if (ALLOWED_EMAILS.length > 0 && !ALLOWED_EMAILS.includes(email)) {
-        setError('Este correo no tiene acceso a Home SD.')
-        setLoading(false)
-        return
-      }
-
-      const usuarioId = email === 'naye.davila.gonzalez@gmail.com' ? 'nayeli' : 'marco'
-      const name = usuarioId === 'nayeli' ? 'Nayeli Dávila' : 'Marco Antonio'
-
-      onLogin({
-        id: usuarioId,
-        name,
-        email,
-        avatar: userInfo.picture || null,
-        usuarioId,
-      })
-    } catch {
-      setError('Error al obtener datos del usuario.')
-    }
-    setLoading(false)
-  }
-
-  const handleGoogleClick = () => {
-    if (!googleReady || !tokenClientRef.current) {
-      setError('Google no está listo. Intenta de nuevo.')
-      return
-    }
-    setError('')
     setLoading(true)
-    tokenClientRef.current.requestAccessToken({ prompt: 'select_account' })
-  }
-
-  const handleManualLogin = (usuarioId) => {
-    setLoading(true)
-    const usuarios = {
-      marco: { id: 'marco', name: 'Marco Antonio', email: 'marcosierraing@gmail.com', usuarioId: 'marco' },
-      nayeli: { id: 'nayeli', name: 'Nayeli Dávila', email: 'naye.davila.gonzalez@gmail.com', usuarioId: 'nayeli' },
-    }
-    setTimeout(() => {
-      onLogin(usuarios[usuarioId])
-      setLoading(false)
-    }, 500)
+    const user = USUARIOS.find(u => u.id === selectedUser)
+    localStorage.setItem('homesd_auth', '1')
+    localStorage.setItem('homesd_user', JSON.stringify({
+      id: user.id,
+      name: user.name,
+      usuarioId: user.id,
+      color: user.color,
+    }))
+    setTimeout(() => onLogin({
+      id: user.id,
+      name: user.name,
+      usuarioId: user.id,
+      color: user.color,
+    }), 400)
   }
 
   return (
     <div style={{
-      height: '100%',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '40px 32px',
-      background: 'var(--bg)',
-      position: 'relative',
-      overflow: 'hidden',
+      height: '100%', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      padding: '40px 32px', background: 'var(--bg)',
+      position: 'relative', overflow: 'hidden',
     }}>
+      {/* Glow background */}
       <div style={{
         position: 'absolute', top: '20%', left: '50%',
         transform: 'translateX(-50%)',
@@ -116,55 +53,100 @@ export default function LoginScreen({ onLogin }) {
         pointerEvents: 'none',
       }} />
 
+      {/* Ícono */}
       <div style={{
         width: 100, height: 100, borderRadius: 24,
-        background: 'var(--card)',
-        border: '1px solid var(--border)',
+        background: 'var(--card)', border: '1px solid var(--border)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        marginBottom: 24,
-        boxShadow: '0 8px 40px rgba(223,202,143,0.1)',
+        marginBottom: 24, boxShadow: '0 8px 40px rgba(223,202,143,0.1)',
         overflow: 'hidden',
       }}>
         <img src="/icons/icon-192.png" alt="Home SD"
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          onError={e => { e.target.style.display = 'none' }}
-        />
+          onError={e => { e.target.style.display = 'none' }} />
         <HouseIcon />
       </div>
 
       <h1 className="serif" style={{ fontSize: 36, color: 'var(--gold)', marginBottom: 6, letterSpacing: '-0.5px' }}>
         Home SD
       </h1>
-      <p style={{ color: 'var(--text2)', fontSize: 14, marginBottom: 48, textAlign: 'center' }}>
+      <p style={{ color: 'var(--text2)', fontSize: 14, marginBottom: 40, textAlign: 'center' }}>
         Control financiero familiar
       </p>
 
-      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {GOOGLE_CLIENT_ID ? (
-          <button className="btn btn-primary"
-            onClick={handleGoogleClick}
-            disabled={loading}
-            style={{ width: '100%', gap: 10 }}>
-            {loading ? <LoadingSpinner /> : <><GoogleIcon /><span>Continuar con Google</span></>}
-          </button>
-        ) : (
-          <div style={{ background: 'var(--amber-bg)', borderRadius: 10, padding: '10px 14px', marginBottom: 4 }}>
-            <p style={{ fontSize: 11, color: 'var(--amber)', textAlign: 'center' }}>
-              Google OAuth pendiente de configurar
-            </p>
-          </div>
-        )}
-
-        
+      {/* Selector de usuario */}
+      <div style={{ width: '100%', marginBottom: 20 }}>
+        <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, marginBottom: 10, letterSpacing: '0.06em' }}>
+          ¿QUIÉN ERES?
+        </p>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {USUARIOS.map(u => (
+            <button key={u.id} onClick={() => setSelectedUser(u.id)}
+              style={{
+                flex: 1, padding: '14px 0',
+                borderRadius: 12,
+                border: `1.5px solid ${selectedUser === u.id ? u.color : 'var(--border)'}`,
+                background: selectedUser === u.id ? `${u.color}15` : 'var(--card)',
+                cursor: 'pointer', transition: 'all 0.15s',
+              }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: '50%', margin: '0 auto 8px',
+                background: `${u.color}20`,
+                border: `2px solid ${selectedUser === u.id ? u.color : 'transparent'}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 14, fontWeight: 700, color: u.color,
+              }}>
+                {u.initials}
+              </div>
+              <p style={{
+                fontSize: 13, fontWeight: 600,
+                color: selectedUser === u.id ? u.color : 'var(--text2)',
+              }}>{u.name}</p>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {error && (
-        <p style={{ color: 'var(--red)', fontSize: 12, marginTop: 16, textAlign: 'center' }}>{error}</p>
-      )}
+      {/* Contraseña */}
+      <div style={{ width: '100%', marginBottom: 16 }}>
+        <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, marginBottom: 8, letterSpacing: '0.06em' }}>
+          CONTRASEÑA
+        </p>
+        <input
+          type="password"
+          value={password}
+          onChange={e => { setPassword(e.target.value); setError(false) }}
+          onKeyDown={e => e.key === 'Enter' && handleLogin()}
+          placeholder="••••••••"
+          style={{
+            width: '100%', padding: '16px',
+            borderRadius: 12,
+            border: `1.5px solid ${error ? 'var(--red)' : 'var(--border)'}`,
+            background: 'var(--card)', color: 'var(--text)',
+            fontSize: 20, textAlign: 'center', letterSpacing: 6,
+            outline: 'none', boxSizing: 'border-box',
+            fontFamily: 'monospace',
+            transition: 'border-color 0.15s',
+          }}
+        />
+        {error && (
+          <p style={{ color: 'var(--red)', fontSize: 12, textAlign: 'center', marginTop: 8 }}>
+            Contraseña incorrecta
+          </p>
+        )}
+      </div>
 
-      <p style={{ color: 'var(--text3)', fontSize: 10, marginTop: 40, textAlign: 'center', lineHeight: 1.6 }}>
+      <button
+        onClick={handleLogin}
+        disabled={!password || loading}
+        className="btn btn-primary"
+        style={{ width: '100%' }}>
+        {loading ? <LoadingSpinner /> : `Entrar como ${USUARIOS.find(u => u.id === selectedUser)?.name}`}
+      </button>
+
+      <p style={{ color: 'var(--text3)', fontSize: 10, marginTop: 32, textAlign: 'center', lineHeight: 1.6 }}>
         Solo Marco y Nayeli tienen acceso.{'\n'}
-        Tus datos se sincronizan con Google Drive.
+        Datos sincronizados en tiempo real.
       </p>
     </div>
   )
@@ -177,21 +159,6 @@ function HouseIcon() {
         stroke="#DFCA8F" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
     </svg>
   )
-}
-
-function GoogleIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24">
-      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-    </svg>
-  )
-}
-
-function UserDot({ color }) {
-  return <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
 }
 
 function LoadingSpinner() {
