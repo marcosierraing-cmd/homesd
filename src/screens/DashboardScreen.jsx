@@ -260,7 +260,7 @@ export default function DashboardScreen({ transactions, user, budgetOverrides, l
 
       {/* Categorías */}
       <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, letterSpacing: '0.06em', marginBottom: 4 }}>POR CATEGORÍA</p>
+        <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, letterSpacing: '0.06em', marginBottom: 4 }}>POR CATEGORÍA · toca para ver detalle</p>
         {CATEGORIES.map(cat => {
           let presupuesto = 0
           cat.subcategories.forEach(sub => {
@@ -271,7 +271,33 @@ export default function DashboardScreen({ transactions, user, budgetOverrides, l
           const gastado = vista === 'quincenal'
             ? getQuincenaGastado(transactions, cat.id, null, quincena, mes)
             : getMesGastado(transactions, cat.id, mes)
-          return <SemaphoreCard key={cat.id} category={cat} gastado={gastado} presupuesto={presupuesto} />
+
+          // Subcategorías con presupuesto y gastado
+          const subcats = cat.subcategories
+            .filter(sub => {
+              if (sub.type === 'liquidado' || sub.type === 'prepagado' || sub.type === 'pendiente') return false
+              const p = vista === 'quincenal' ? (quincena === 1 ? (sub.q1 || 0) : (sub.q2 || 0)) : ((sub.q1 || 0) + (sub.q2 || 0))
+              return p > 0
+            })
+            .map(sub => {
+              const p = vista === 'quincenal' ? (quincena === 1 ? (sub.q1 || 0) : (sub.q2 || 0)) : ((sub.q1 || 0) + (sub.q2 || 0))
+              const g = vista === 'quincenal'
+                ? getQuincenaGastado(transactions, cat.id, sub.id, quincena, mes)
+                : getMesGastado(transactions, cat.id, mes)
+              return { ...sub, presupuesto: p, gastado: g }
+            })
+
+          return (
+            <SemaphoreCard
+              key={cat.id}
+              category={cat}
+              gastado={gastado}
+              presupuesto={presupuesto}
+              subcats={subcats}
+              mxn={mxn}
+              mask={mask}
+            />
+          )
         })}
       </div>
 
