@@ -12,7 +12,6 @@ import SettingsScreen from './screens/SettingsScreen.jsx'
 import BudgetEditorScreen from './screens/BudgetEditorScreen.jsx'
 import BottomNav from './components/BottomNav.jsx'
 
-// Auth persistente — igual que CRM Praxentia
 function getStoredUser() {
   try {
     const auth = localStorage.getItem('homesd_auth')
@@ -24,24 +23,15 @@ function getStoredUser() {
 export default function App() {
   const [user, setUser] = useState(getStoredUser)
   const {
-    transactions,
-    logros,
-    addTransaction,
-    deleteTransaction,
-    updateTransaction,
-    budgetOverrides,
-    updateBudgetOverride,
-    addLogro,
-    deleteLogro,
-    budgets,
-    selectedMonth,
-    setSelectedMonth,
-    saveBudget,
-    copyBudgetFromPrevMonth,
-    syncing,
-    error,
-    online,
-    refresh,
+    transactions, logros,
+    addTransaction, deleteTransaction, updateTransaction,
+    budgetOverrides, updateBudgetOverride,
+    addLogro, deleteLogro,
+    budgets, subcategories,
+    selectedMonth, setSelectedMonth,
+    saveBudget, copyBudgetFromPrevMonth,
+    saveSubcategoryName, copySubcategoriesFromPrevMonth,
+    syncing, error, online, refresh,
   } = useStorage()
 
   const logout = () => {
@@ -50,11 +40,7 @@ export default function App() {
     setUser(null)
   }
 
-  const handleLogin = (userData) => {
-    setUser(userData)
-  }
-
-  if (!user) return <LoginScreen onLogin={handleLogin} />
+  if (!user) return <LoginScreen onLogin={setUser} />
 
   return (
     <PrivacyProvider>
@@ -67,6 +53,7 @@ export default function App() {
               user={user}
               budgetOverrides={budgetOverrides}
               budgets={budgets}
+              subcategories={subcategories}
               selectedMonth={selectedMonth}
               setSelectedMonth={setSelectedMonth}
               logros={logros}
@@ -80,32 +67,29 @@ export default function App() {
             <CaptureScreen onAdd={addTransaction} user={user} />
           } />
           <Route path="/transactions" element={
-            <TransactionsScreen
-              transactions={transactions}
-              onDelete={deleteTransaction}
-            />
+            <TransactionsScreen transactions={transactions} onDelete={deleteTransaction} />
           } />
           <Route path="/conciliation" element={
             <ConciliationScreen transactions={transactions} onAdd={addTransaction} />
           } />
           <Route path="/settings" element={
             <SettingsScreen
-              user={user}
-              onLogout={logout}
+              user={user} onLogout={logout}
               budgetOverrides={budgetOverrides}
               onUpdateBudgetOverride={updateBudgetOverride}
-              syncing={syncing}
-              error={error}
-              online={online}
+              syncing={syncing} error={error} online={online}
             />
           } />
           <Route path="/budget-editor" element={
             <BudgetEditorScreen
               budgets={budgets}
+              subcategories={subcategories}
               selectedMonth={selectedMonth}
               setSelectedMonth={setSelectedMonth}
               saveBudget={saveBudget}
               copyBudgetFromPrevMonth={copyBudgetFromPrevMonth}
+              saveSubcategoryName={saveSubcategoryName}
+              copySubcategoriesFromPrevMonth={copySubcategoriesFromPrevMonth}
             />
           } />
         </Routes>
