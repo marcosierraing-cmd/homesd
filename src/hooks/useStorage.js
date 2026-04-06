@@ -6,7 +6,6 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_zPfFFQZy7qQouL3E5l3Pwg__Ysn5TUE'
 );
 
-// Helper: mes actual como "YYYY-MM"
 function currentYearMonth() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -16,8 +15,9 @@ export function useStorage() {
   const [transactions, setTransactions] = useState([]);
   const [logros, setLogros] = useState([]);
   const [budgetOverrides, setBudgetOverrides] = useState({});
-  const [budgets, setBudgets] = useState({}); // { category_id: { q1: number, q2: number } }
-  const [selectedMonth, setSelectedMonth] = useState(currentYearMonth()); // "2026-04"
+  const [budgets, setBudgets] = useState({});
+  const [subcategories, setSubcategories] = useState({}); // { subcategory_id: name }
+  const [selectedMonth, setSelectedMonth] = useState(currentYearMonth());
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState(null);
   const [online, setOnline] = useState(navigator.onLine);
@@ -48,9 +48,7 @@ export function useStorage() {
         createdAt: t.created_at,
       }));
       setTransactions(mapped);
-    } catch (err) {
-      setError(err.message);
-    }
+    } catch (err) { setError(err.message); }
   }, []);
 
   const fetchLogros = useCallback(async () => {
@@ -58,83 +56,88 @@ export function useStorage() {
       const mesActual = new Date().getMonth();
       const anioActual = new Date().getFullYear();
       const { data } = await supabase
-        .from('homesd_logros')
-        .select('*')
-        .eq('mes', mesActual)
-        .eq('anio', anioActual)
-        .eq('activo', true);
+        .from('homesd_logros').select('*')
+        .eq('mes', mesActual).eq('anio', anioActual).eq('activo', true);
       setLogros(data || []);
     } catch {}
   }, []);
 
-  // Cargar presupuesto del mes seleccionado
   const fetchBudgets = useCallback(async (yearMonth) => {
     try {
-      const { data, error } = await supabase
-        .from('homesd_budgets')
-        .select('*')
-        .eq('year_month', yearMonth);
-      if (error) throw error;
-      // Convertir array a objeto { category_id: { q1, q2 } }
+      const { data } = await supabase.from('homesd_budgets').select('*').eq('year_month', yearMonth);
       const map = {};
-      (data || []).forEach(row => {
-        map[row.category_id] = { q1: row.q1_budget || 0, q2: row.q2_budget || 0 };
-      });
+      (data || []).forEach(row => { map[row.category_id] = { q1: row.q1_budget || 0, q2: row.q2_budget || 0 }; });
       setBudgets(map);
-    } catch (err) {
-      setBudgets({});
-    }
+    } catch { setBudgets({}); }
   }, []);
 
-  // Guardar/actualizar presupuesto de una categoría para un mes
+  const fetchSubcategories = useCallback(async (yearMonth) => {
+    try {
+      const { data } = await supabase.from('homesd_subcategories').select('*').eq('year_month', yearMonth);
+      const map = {};
+      (data || []).forEach(row => { map[row.subcategory_id] = row.name; });
+      setSubcategories(map);
+    } catch { setSubcategories({}); }
+  }, []);
+
   const saveBudget = useCallback(async (yearMonth, categoryId, q1, q2) => {
     try {
       await supabase.from('homesd_budgets').upsert(
         { year_month: yearMonth, category_id: categoryId, q1_budget: q1, q2_budget: q2 },
         { onConflict: 'year_month,category_id' }
       );
-      // Actualizar estado local inmediatamente
       setBudgets(prev => ({ ...prev, [categoryId]: { q1, q2 } }));
-    } catch (err) {
-      setError(err.message);
-    }
+    } catch (err) { setError(err.message); }
   }, []);
 
-  // Copiar presupuesto de mes anterior
+  const saveSubcategoryName = useCallback(async (yearMonth, subcategoryId, categoryId, name) => {
+    try {
+      await supabase.from('homesd_subcategories').upsert(
+        { subcategory_id: subcategoryId, category_id: categoryId, name, year_month: yearMonth },
+        { onConflict: 'subcategory_id,year_month' }
+      );
+      setSubcategories(prev => ({ ...prev, [subcategoryId]: name }));
+    } catch (err) { setError(err.message); }
+  }, []);
+
   const copyBudgetFromPrevMonth = useCallback(async (yearMonth) => {
     const [year, month] = yearMonth.split('-').map(Number);
     const prevDate = new Date(year, month - 2, 1);
-    const prevYearMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+    const prev = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
     try {
-      const { data } = await supabase
-        .from('homesd_budgets')
-        .select('*')
-        .eq('year_month', prevYearMonth);
+      const { data } = await supabase.from('homesd_budgets').select('*').eq('year_month', prev);
       if (!data?.length) return false;
-      const rows = data.map(r => ({ ...r, id: undefined, year_month: yearMonth }));
-      await supabase.from('homesd_budgets').upsert(rows, { onConflict: 'year_month,category_id' });
+      await supabase.from('homesd_budgets').upsert(
+        data.map(r => ({ year_month: yearMonth, category_id: r.category_id, q1_budget: r.q1_budget, q2_budget: r.q2_budget })),
+        { onConflict: 'year_month,category_id' }
+      );
       await fetchBudgets(yearMonth);
       return true;
     } catch { return false; }
   }, [fetchBudgets]);
 
-  useEffect(() => {
-    fetchTransactions();
-    fetchLogros();
-  }, [fetchTransactions, fetchLogros]);
+  const copySubcategoriesFromPrevMonth = useCallback(async (yearMonth) => {
+    const [year, month] = yearMonth.split('-').map(Number);
+    const prevDate = new Date(year, month - 2, 1);
+    const prev = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+    try {
+      const { data } = await supabase.from('homesd_subcategories').select('*').eq('year_month', prev);
+      if (!data?.length) return false;
+      await supabase.from('homesd_subcategories').upsert(
+        data.map(r => ({ subcategory_id: r.subcategory_id, category_id: r.category_id, name: r.name, year_month: yearMonth })),
+        { onConflict: 'subcategory_id,year_month' }
+      );
+      await fetchSubcategories(yearMonth);
+      return true;
+    } catch { return false; }
+  }, [fetchSubcategories]);
 
-  // Re-cargar presupuesto cuando cambia el mes seleccionado
-  useEffect(() => {
-    fetchBudgets(selectedMonth);
-  }, [selectedMonth, fetchBudgets]);
+  useEffect(() => { fetchTransactions(); fetchLogros(); }, [fetchTransactions, fetchLogros]);
+  useEffect(() => { fetchBudgets(selectedMonth); fetchSubcategories(selectedMonth); }, [selectedMonth, fetchBudgets, fetchSubcategories]);
 
-  // Realtime
   useEffect(() => {
-    const channel = supabase
-      .channel('homesd_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'homesd_transactions' }, () => {
-        fetchTransactions();
-      })
+    const channel = supabase.channel('homesd_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'homesd_transactions' }, () => fetchTransactions())
       .subscribe();
     return () => supabase.removeChannel(channel);
   }, [fetchTransactions]);
@@ -161,11 +164,8 @@ export function useStorage() {
       if (error) throw error;
       await fetchTransactions();
       return isArray ? data : data[0];
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSyncing(false);
-    }
+    } catch (err) { setError(err.message); }
+    finally { setSyncing(false); }
   }, [fetchTransactions]);
 
   const deleteTransaction = useCallback(async (id) => {
@@ -173,31 +173,24 @@ export function useStorage() {
     try {
       await supabase.from('homesd_transactions').delete().eq('id', id);
       setTransactions(prev => prev.filter(t => t.id !== id));
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSyncing(false);
-    }
+    } catch (err) { setError(err.message); }
+    finally { setSyncing(false); }
   }, []);
 
   const updateTransaction = useCallback(async (id, changes) => {
     setSyncing(true);
     try {
-      const row = {
+      await supabase.from('homesd_transactions').update({
         ...changes,
         categoria_id: changes.categoriaId || changes.categoria_id,
         subcategoria_id: changes.subcategoriaId || changes.subcategoria_id,
         cuenta_id: changes.cuentaId || changes.cuenta_id,
         usuario_id: changes.usuarioId || changes.usuario_id,
         updated_at: new Date().toISOString(),
-      };
-      await supabase.from('homesd_transactions').update(row).eq('id', id);
+      }).eq('id', id);
       await fetchTransactions();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSyncing(false);
-    }
+    } catch (err) { setError(err.message); }
+    finally { setSyncing(false); }
   }, [fetchTransactions]);
 
   const updateBudgetOverride = useCallback(async (key, value) => {
@@ -217,30 +210,20 @@ export function useStorage() {
   }, []);
 
   return {
-    transactions,
-    logros,
-    budgetOverrides,
-    budgets,
-    selectedMonth,
-    setSelectedMonth,
-    saveBudget,
-    copyBudgetFromPrevMonth,
-    syncing,
-    error,
-    online,
+    transactions, logros, budgetOverrides,
+    budgets, subcategories,
+    selectedMonth, setSelectedMonth,
+    saveBudget, copyBudgetFromPrevMonth,
+    saveSubcategoryName, copySubcategoriesFromPrevMonth,
+    syncing, error, online,
     hasPendingChanges: false,
     lastSync: new Date().toISOString(),
-    addTransaction,
-    deleteTransaction,
-    updateTransaction,
-    updateBudgetOverride,
-    addLogro,
-    deleteLogro,
+    addTransaction, deleteTransaction, updateTransaction,
+    updateBudgetOverride, addLogro, deleteLogro,
     refresh: fetchTransactions,
   };
 }
 
-// ─── Helpers de cálculo ───────────────────────────────────────────────────────
 export function getQuincenaGastado(transactions, catId = null, subId = null, quincena, mes, anio) {
   return transactions
     .filter(t => {
