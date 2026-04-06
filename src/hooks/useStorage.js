@@ -6,10 +6,18 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_zPfFFQZy7qQouL3E5l3Pwg__Ysn5TUE'
 );
 
+// Helper: mes actual como "YYYY-MM"
+function currentYearMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
 export function useStorage() {
   const [transactions, setTransactions] = useState([]);
   const [logros, setLogros] = useState([]);
   const [budgetOverrides, setBudgetOverrides] = useState({});
+  const [budgets, setBudgets] = useState({}); // { category_id: { q1: number, q2: number } }
+  const [selectedMonth, setSelectedMonth] = useState(currentYearMonth()); // "2026-04"
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState(null);
   const [online, setOnline] = useState(navigator.onLine);
@@ -30,7 +38,6 @@ export function useStorage() {
         .order('created_at', { ascending: false })
         .limit(500);
       if (error) throw error;
-      // Mapear campos snake_case → camelCase para compatibilidad con el resto del código
       const mapped = (data || []).map(t => ({
         ...t,
         categoriaId: t.categoria_id,
@@ -60,12 +67,68 @@ export function useStorage() {
     } catch {}
   }, []);
 
+  // Cargar presupuesto del mes seleccionado
+  const fetchBudgets = useCallback(async (yearMonth) => {
+    try {
+      const { data, error } = await supabase
+        .from('homesd_budgets')
+        .select('*')
+        .eq('year_month', yearMonth);
+      if (error) throw error;
+      // Convertir array a objeto { category_id: { q1, q2 } }
+      const map = {};
+      (data || []).forEach(row => {
+        map[row.category_id] = { q1: row.q1_budget || 0, q2: row.q2_budget || 0 };
+      });
+      setBudgets(map);
+    } catch (err) {
+      setBudgets({});
+    }
+  }, []);
+
+  // Guardar/actualizar presupuesto de una categoría para un mes
+  const saveBudget = useCallback(async (yearMonth, categoryId, q1, q2) => {
+    try {
+      await supabase.from('homesd_budgets').upsert(
+        { year_month: yearMonth, category_id: categoryId, q1_budget: q1, q2_budget: q2 },
+        { onConflict: 'year_month,category_id' }
+      );
+      // Actualizar estado local inmediatamente
+      setBudgets(prev => ({ ...prev, [categoryId]: { q1, q2 } }));
+    } catch (err) {
+      setError(err.message);
+    }
+  }, []);
+
+  // Copiar presupuesto de mes anterior
+  const copyBudgetFromPrevMonth = useCallback(async (yearMonth) => {
+    const [year, month] = yearMonth.split('-').map(Number);
+    const prevDate = new Date(year, month - 2, 1);
+    const prevYearMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+    try {
+      const { data } = await supabase
+        .from('homesd_budgets')
+        .select('*')
+        .eq('year_month', prevYearMonth);
+      if (!data?.length) return false;
+      const rows = data.map(r => ({ ...r, id: undefined, year_month: yearMonth }));
+      await supabase.from('homesd_budgets').upsert(rows, { onConflict: 'year_month,category_id' });
+      await fetchBudgets(yearMonth);
+      return true;
+    } catch { return false; }
+  }, [fetchBudgets]);
+
   useEffect(() => {
     fetchTransactions();
     fetchLogros();
   }, [fetchTransactions, fetchLogros]);
 
-  // Realtime — cuando Nayeli agrega un gasto, Marco lo ve al instante
+  // Re-cargar presupuesto cuando cambia el mes seleccionado
+  useEffect(() => {
+    fetchBudgets(selectedMonth);
+  }, [selectedMonth, fetchBudgets]);
+
+  // Realtime
   useEffect(() => {
     const channel = supabase
       .channel('homesd_changes')
@@ -79,7 +142,6 @@ export function useStorage() {
   const addTransaction = useCallback(async (transaction) => {
     const isArray = Array.isArray(transaction);
     const items = isArray ? transaction : [transaction];
-
     const rows = items.map(t => ({
       id: t.id || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       timestamp: t.timestamp || new Date().toISOString(),
@@ -93,7 +155,6 @@ export function useStorage() {
       nota: t.nota || '',
       modo_captura: t.modoCaptura || t.modo_captura || 'manual',
     }));
-
     setSyncing(true);
     try {
       const { data, error } = await supabase.from('homesd_transactions').insert(rows).select();
@@ -159,6 +220,11 @@ export function useStorage() {
     transactions,
     logros,
     budgetOverrides,
+    budgets,
+    selectedMonth,
+    setSelectedMonth,
+    saveBudget,
+    copyBudgetFromPrevMonth,
     syncing,
     error,
     online,
@@ -175,25 +241,27 @@ export function useStorage() {
 }
 
 // ─── Helpers de cálculo ───────────────────────────────────────────────────────
-export function getQuincenaGastado(transactions, catId = null, subId = null, quincena, mes) {
+export function getQuincenaGastado(transactions, catId = null, subId = null, quincena, mes, anio) {
   return transactions
     .filter(t => {
       if (t.tipo === 'ingreso') return false;
       const fecha = new Date(t.timestamp || t.createdAt || t.created_at);
       const tQ = fecha.getDate() <= 15 ? 1 : 2;
-      return fecha.getMonth() === mes && tQ === quincena
+      const matchAnio = anio ? fecha.getFullYear() === anio : true;
+      return matchAnio && fecha.getMonth() === mes && tQ === quincena
         && (!catId || t.categoriaId === catId || t.categoria_id === catId)
         && (!subId || t.subcategoriaId === subId || t.subcategoria_id === subId);
     })
     .reduce((sum, t) => sum + (Number(t.monto) || 0), 0);
 }
 
-export function getMesGastado(transactions, catId = null, mes) {
+export function getMesGastado(transactions, catId = null, mes, anio) {
   return transactions
     .filter(t => {
       if (t.tipo === 'ingreso') return false;
       const fecha = new Date(t.timestamp || t.createdAt || t.created_at);
-      return fecha.getMonth() === mes
+      const matchAnio = anio ? fecha.getFullYear() === anio : true;
+      return matchAnio && fecha.getMonth() === mes
         && (!catId || t.categoriaId === catId || t.categoria_id === catId);
     })
     .reduce((sum, t) => sum + (Number(t.monto) || 0), 0);
