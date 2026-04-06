@@ -33,6 +33,11 @@ export default function App() {
     updateBudgetOverride,
     addLogro,
     deleteLogro,
+    budgets,
+    selectedMonth,
+    setSelectedMonth,
+    saveBudget,
+    copyBudgetFromPrevMonth,
     syncing,
     error,
     online,
@@ -49,10 +54,6 @@ export default function App() {
     setUser(userData)
   }
 
-  const handleUpdateBudgetOverride = async (key, value) => {
-    await updateBudgetOverride(key, value)
-  }
-
   if (!user) return <LoginScreen onLogin={handleLogin} />
 
   return (
@@ -65,6 +66,9 @@ export default function App() {
               transactions={transactions}
               user={user}
               budgetOverrides={budgetOverrides}
+              budgets={budgets}
+              selectedMonth={selectedMonth}
+              setSelectedMonth={setSelectedMonth}
               logros={logros}
               addLogro={addLogro}
               deleteLogro={deleteLogro}
@@ -89,7 +93,7 @@ export default function App() {
               user={user}
               onLogout={logout}
               budgetOverrides={budgetOverrides}
-              onUpdateBudgetOverride={handleUpdateBudgetOverride}
+              onUpdateBudgetOverride={updateBudgetOverride}
               syncing={syncing}
               error={error}
               online={online}
@@ -97,8 +101,11 @@ export default function App() {
           } />
           <Route path="/budget-editor" element={
             <BudgetEditorScreen
-              budgetOverrides={budgetOverrides}
-              onUpdateBudgetOverride={handleUpdateBudgetOverride}
+              budgets={budgets}
+              selectedMonth={selectedMonth}
+              setSelectedMonth={setSelectedMonth}
+              saveBudget={saveBudget}
+              copyBudgetFromPrevMonth={copyBudgetFromPrevMonth}
             />
           } />
         </Routes>
