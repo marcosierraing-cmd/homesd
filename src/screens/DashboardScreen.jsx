@@ -3,121 +3,123 @@ import SemaphoreCard from '../components/SemaphoreCard.jsx'
 import { CATEGORIES, INGRESO_QUINCENAL } from '../data/budget.js'
 import { usePrivacy } from '../context/PrivacyContext.jsx'
 
-const getMesActual = () => ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][new Date().getMonth()]
-const getQuincenaActual = () => new Date().getDate() <= 15 ? 1 : 2
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
-const calcularTotalQ = (q) => CATEGORIES.reduce((s, cat) => s + cat.subcategories.reduce((ss, sub) => {
-  if (sub.type === 'liquidado' || sub.type === 'prepagado' || sub.type === 'pendiente') return ss
-  return ss + (q === 1 ? (sub.q1 || 0) : (sub.q2 || 0))
-}, 0), 0)
+// Parsear "YYYY-MM" → { year, month (0-indexed) }
+function parseYearMonth(ym) {
+  const [y, m] = ym.split('-').map(Number)
+  return { year: y, month: m - 1 }
+}
 
-const getQuincenaGastado = (transactions, catId, subId, quincena, mes) => {
+// Navegar al mes anterior/siguiente
+function shiftMonth(ym, delta) {
+  const [y, m] = ym.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function getQuincenaActual() {
+  return new Date().getDate() <= 15 ? 1 : 2
+}
+
+// Calcular total presupuestado de una quincena usando budgets de Supabase
+// Si no hay budget para ese mes, cae al presupuesto estático de CATEGORIES
+function calcularTotalQ(quincena, cat, budgets) {
+  // Si hay budget guardado para esta categoría, usarlo
+  if (budgets && budgets[cat.id]) {
+    return quincena === 1 ? (budgets[cat.id].q1 || 0) : (budgets[cat.id].q2 || 0)
+  }
+  // Fallback: presupuesto estático
+  return cat.subcategories.reduce((ss, sub) => {
+    if (sub.type === 'liquidado' || sub.type === 'prepagado' || sub.type === 'pendiente') return ss
+    return ss + (quincena === 1 ? (sub.q1 || 0) : (sub.q2 || 0))
+  }, 0)
+}
+
+function calcularTotalMes(cat, budgets) {
+  if (budgets && budgets[cat.id]) {
+    return (budgets[cat.id].q1 || 0) + (budgets[cat.id].q2 || 0)
+  }
+  return cat.subcategories.reduce((ss, sub) => {
+    if (sub.type === 'liquidado' || sub.type === 'prepagado' || sub.type === 'pendiente') return ss
+    return ss + (sub.q1 || 0) + (sub.q2 || 0)
+  }, 0)
+}
+
+const getQuincenaGastado = (transactions, catId, subId, quincena, mes, anio) => {
   return transactions.filter(t => {
     if (t.tipo === 'ingreso') return false
     const d = new Date(t.timestamp || t.createdAt || t.created_at)
     const tQ = d.getDate() <= 15 ? 1 : 2
-    return d.getMonth() === mes && tQ === quincena
+    return d.getFullYear() === anio && d.getMonth() === mes && tQ === quincena
       && t.categoriaId === catId && (!subId || t.subcategoriaId === subId)
   }).reduce((s, t) => s + (t.monto || 0), 0)
 }
 
-const getMesGastado = (transactions, catId, mes) => {
+const getMesGastado = (transactions, catId, mes, anio) => {
   return transactions.filter(t => {
     if (t.tipo === 'ingreso') return false
     const d = new Date(t.timestamp || t.createdAt || t.created_at)
-    return d.getMonth() === mes && t.categoriaId === catId
+    return d.getFullYear() === anio && d.getMonth() === mes && t.categoriaId === catId
   }).reduce((s, t) => s + (t.monto || 0), 0)
 }
 
-// Próximos pagos — gastos fijos en los próximos 7 días
-function getProximosPagos() {
-  const hoy = new Date()
-  const dia = hoy.getDate()
-  const pagos = []
-  CATEGORIES.forEach(cat => {
-    cat.subcategories.forEach(sub => {
-      if (!sub.day || sub.day === 0) return
-      if (sub.type === 'liquidado' || sub.type === 'prepagado' || sub.type === 'pendiente') return
-      const monto = sub.q1 || sub.q2 || 0
-      if (monto === 0) return
-      const diff = sub.day - dia
-      if (diff >= 0 && diff <= 7) {
-        pagos.push({
-          nombre: sub.name,
-          monto,
-          diasRestantes: diff,
-          dia: sub.day,
-          catColor: cat.color,
-          catIcon: cat.icon,
-        })
-      }
-    })
-  })
-  return pagos.sort((a, b) => a.diasRestantes - b.diasRestantes)
-}
-
-// Resumen de últimos 7 días
-function getResumenSemanal(transactions, mes) {
+// Resumen de últimos 7 días (siempre del mes actual real)
+function getResumenSemanal(transactions) {
   const ahora = new Date()
   const hace7 = new Date(ahora.getTime() - 7 * 24 * 60 * 60 * 1000)
   const hace14 = new Date(ahora.getTime() - 14 * 24 * 60 * 60 * 1000)
-
-  const ultimos7 = transactions.filter(t => {
-    if (t.tipo === 'ingreso') return false
-    const d = new Date(t.timestamp || t.createdAt || t.created_at)
-    return d >= hace7
-  })
-  const semanaAnterior = transactions.filter(t => {
-    if (t.tipo === 'ingreso') return false
-    const d = new Date(t.timestamp || t.createdAt || t.created_at)
-    return d >= hace14 && d < hace7
-  })
-
+  const ultimos7 = transactions.filter(t => { if (t.tipo === 'ingreso') return false; const d = new Date(t.timestamp || t.createdAt || t.created_at); return d >= hace7 })
+  const semanaAnterior = transactions.filter(t => { if (t.tipo === 'ingreso') return false; const d = new Date(t.timestamp || t.createdAt || t.created_at); return d >= hace14 && d < hace7 })
   const totalSemana = ultimos7.reduce((s, t) => s + (t.monto || 0), 0)
   const totalAnterior = semanaAnterior.reduce((s, t) => s + (t.monto || 0), 0)
-
-  // Top 3 categorías
   const porCat = {}
-  ultimos7.forEach(t => {
-    porCat[t.categoriaId] = (porCat[t.categoriaId] || 0) + (t.monto || 0)
-  })
-  const top3 = Object.entries(porCat)
-    .sort(([,a],[,b]) => b - a)
-    .slice(0, 3)
-    .map(([id, monto]) => ({ id, monto, cat: CATEGORIES.find(c => c.id === id) }))
-    .filter(x => x.cat)
-
+  ultimos7.forEach(t => { porCat[t.categoriaId] = (porCat[t.categoriaId] || 0) + (t.monto || 0) })
+  const top3 = Object.entries(porCat).sort(([,a],[,b]) => b - a).slice(0, 3).map(([id, monto]) => ({ id, monto, cat: CATEGORIES.find(c => c.id === id) })).filter(x => x.cat)
   return { totalSemana, totalAnterior, top3, count: ultimos7.length }
 }
 
-export default function DashboardScreen({ transactions, user, budgetOverrides, logros = [], addLogro, deleteLogro, syncing, online }) {
+export default function DashboardScreen({ transactions, user, budgetOverrides, budgets = {}, selectedMonth, setSelectedMonth, logros = [], addLogro, deleteLogro, syncing, online }) {
   const [vista, setVista] = useState('quincenal')
   const [quincena, setQuincena] = useState(getQuincenaActual())
   const [showLogrosEditor, setShowLogrosEditor] = useState(false)
   const [nuevoLogro, setNuevoLogro] = useState('')
   const [expandSemanal, setExpandSemanal] = useState(false)
   const { mask } = usePrivacy()
-  const mes = new Date().getMonth()
-  const mesNombre = getMesActual()
-  const totalPresupuesto = useMemo(() => calcularTotalQ(quincena), [quincena])
+
+  // Derivar año y mes del selectedMonth
+  const { year: anio, month: mes } = useMemo(() => parseYearMonth(selectedMonth), [selectedMonth])
+  const mesNombre = MESES[mes]
+  const esHoy = selectedMonth === `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+
   const mxn = n => '$' + Math.round(n).toLocaleString('es-MX')
 
-  const proximosPagos = useMemo(() => getProximosPagos(), [])
-  const resumenSemanal = useMemo(() => getResumenSemanal(transactions, mes), [transactions, mes])
+  const resumenSemanal = useMemo(() => getResumenSemanal(transactions), [transactions])
+
+  // Total presupuestado del período seleccionado
+  const totalPresupuesto = useMemo(() => {
+    return CATEGORIES.reduce((s, cat) => {
+      const p = vista === 'quincenal'
+        ? calcularTotalQ(quincena, cat, budgets)
+        : calcularTotalMes(cat, budgets)
+      return s + p
+    }, 0)
+  }, [quincena, vista, budgets])
 
   const { totalGastado, totalIngresos } = useMemo(() => {
     const filtrados = transactions.filter(t => {
       const d = new Date(t.timestamp || t.createdAt || t.created_at)
+      if (d.getFullYear() !== anio || d.getMonth() !== mes) return false
       if (vista === 'quincenal') {
         const tQ = d.getDate() <= 15 ? 1 : 2
-        return d.getMonth() === mes && tQ === quincena
+        return tQ === quincena
       }
-      return d.getMonth() === mes
+      return true
     })
     const gastado = filtrados.filter(t => t.tipo !== 'ingreso').reduce((s, t) => s + (t.monto || 0), 0)
     const ingresos = filtrados.filter(t => t.tipo === 'ingreso').reduce((s, t) => s + (t.monto || 0), 0)
     return { totalGastado: gastado, totalIngresos: ingresos }
-  }, [transactions, mes, quincena, vista])
+  }, [transactions, anio, mes, quincena, vista])
 
   const pctTotal = totalPresupuesto > 0 ? totalGastado / totalPresupuesto : 0
   const saldoReal = totalIngresos - totalGastado
@@ -135,7 +137,16 @@ export default function DashboardScreen({ transactions, user, budgetOverrides, l
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
           <div>
-            <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 2 }}>{mesNombre} 2026</p>
+            {/* Navegación por meses */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+              <button onClick={() => setSelectedMonth(shiftMonth(selectedMonth, -1))}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text3)', fontSize: 16, cursor: 'pointer', padding: '0 4px', lineHeight: 1 }}>‹</button>
+              <p style={{ fontSize: 12, color: esHoy ? 'var(--teal)' : 'var(--amber)', fontWeight: esHoy ? 400 : 600, minWidth: 100, textAlign: 'center' }}>
+                {mesNombre} {anio}{!esHoy && ' ·  planeando'}
+              </p>
+              <button onClick={() => setSelectedMonth(shiftMonth(selectedMonth, 1))}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text3)', fontSize: 16, cursor: 'pointer', padding: '0 4px', lineHeight: 1 }}>›</button>
+            </div>
             <h1 className="serif" style={{ fontSize: 26, color: 'var(--gold)', lineHeight: 1.1 }}>Home SD</h1>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -149,42 +160,24 @@ export default function DashboardScreen({ transactions, user, budgetOverrides, l
           </div>
         </div>
 
-        {/* Banner próximos pagos */}
-        {proximosPagos.length > 0 && (
-          <div style={{ background: 'var(--amber-bg, rgba(239,159,39,0.08))', border: '0.5px solid rgba(239,159,39,0.3)', borderRadius: 12, padding: '10px 14px', marginBottom: 14 }}>
-            <p style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 600, letterSpacing: '0.06em', marginBottom: 8 }}>⏰ PRÓXIMOS PAGOS</p>
-            {proximosPagos.map((p, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: i < proximosPagos.length - 1 ? 6 : 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 12 }}>{p.catIcon}</span>
-                  <span style={{ fontSize: 12, color: 'var(--text2)' }}>{p.nombre}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)' }}>{mask(mxn(p.monto))}</span>
-                  <span style={{ fontSize: 10, color: p.diasRestantes === 0 ? 'var(--red)' : p.diasRestantes <= 2 ? 'var(--amber)' : 'var(--text3)', background: p.diasRestantes === 0 ? 'var(--red-bg)' : 'var(--card)', padding: '1px 6px', borderRadius: 6 }}>
-                    {p.diasRestantes === 0 ? '¡Hoy!' : p.diasRestantes === 1 ? 'Mañana' : `En ${p.diasRestantes}d`}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Toggle quincenal/mensual */}
-        <div style={{ display: 'flex', gap: 4, background: 'var(--card)', borderRadius: 10, padding: 3, marginBottom: 16 }}>
+        {/* Toggle Quincenal / Mensual */}
+        <div style={{ display: 'flex', background: 'var(--card)', borderRadius: 12, padding: 4, marginBottom: 14, gap: 4 }}>
           {['quincenal', 'mensual'].map(v => (
-            <button key={v} onClick={() => setVista(v)} style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', cursor: 'pointer', background: vista === v ? 'var(--card2)' : 'transparent', color: vista === v ? 'var(--gold)' : 'var(--text3)', fontSize: 13, fontWeight: 500 }}>
-              {v === 'quincenal' ? 'Quincenal' : 'Mensual'}
+            <button key={v} onClick={() => setVista(v)}
+              style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: vista === v ? 'var(--bg)' : 'transparent', color: vista === v ? 'var(--text)' : 'var(--text3)', fontSize: 13, fontWeight: vista === v ? 600 : 400, cursor: 'pointer', textTransform: 'capitalize' }}>
+              {v.charAt(0).toUpperCase() + v.slice(1)}
             </button>
           ))}
         </div>
 
+        {/* Selector Q1/Q2 */}
         {vista === 'quincenal' && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
             {[1, 2].map(q => (
-              <button key={q} onClick={() => setQuincena(q)} style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: quincena === q ? '1px solid var(--gold-dim)' : '0.5px solid var(--border2)', cursor: 'pointer', background: quincena === q ? 'var(--gold-bg)' : 'var(--card)' }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: quincena === q ? 'var(--gold)' : 'var(--text2)' }}>Q{q}</div>
-                <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>{q === 1 ? 'Días 1-15' : 'Días 16-31'}</div>
+              <button key={q} onClick={() => setQuincena(q)}
+                style={{ flex: 1, padding: '10px', borderRadius: 10, border: quincena === q ? '1.5px solid var(--gold)' : '0.5px solid var(--border)', background: quincena === q ? 'transparent' : 'var(--card)', color: quincena === q ? 'var(--gold)' : 'var(--text3)', fontSize: 12, fontWeight: quincena === q ? 700 : 400, cursor: 'pointer' }}>
+                <div style={{ fontWeight: 700 }}>Q{q}</div>
+                <div style={{ fontSize: 10, marginTop: 2 }}>Días {q === 1 ? '1-15' : '16-31'}</div>
               </button>
             ))}
           </div>
@@ -226,53 +219,53 @@ export default function DashboardScreen({ transactions, user, budgetOverrides, l
           </div>
         )}
 
-        {/* Resumen semanal */}
-        <div style={{ background: 'var(--card)', borderRadius: 12, padding: '12px 14px', marginBottom: 8, cursor: 'pointer' }} onClick={() => setExpandSemanal(!expandSemanal)}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)' }}>📅 Esta semana</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{mask(mxn(resumenSemanal.totalSemana))}</span>
-              {resumenSemanal.totalAnterior > 0 && (
-                <span style={{ fontSize: 10, color: resumenSemanal.totalSemana <= resumenSemanal.totalAnterior ? 'var(--teal)' : 'var(--red)', background: resumenSemanal.totalSemana <= resumenSemanal.totalAnterior ? 'var(--green-bg)' : 'var(--red-bg)', padding: '2px 6px', borderRadius: 6 }}>
-                  {resumenSemanal.totalSemana <= resumenSemanal.totalAnterior ? '↓' : '↑'} vs sem ant.
-                </span>
-              )}
-              <span style={{ color: 'var(--text3)', fontSize: 12 }}>{expandSemanal ? '▲' : '▼'}</span>
+        {/* Resumen semanal — solo cuando vemos mes actual */}
+        {esHoy && (
+          <div style={{ background: 'var(--card)', borderRadius: 12, padding: '12px 14px', marginBottom: 8, cursor: 'pointer' }} onClick={() => setExpandSemanal(!expandSemanal)}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)' }}>📅 Esta semana</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{mask(mxn(resumenSemanal.totalSemana))}</span>
+                {resumenSemanal.totalAnterior > 0 && (
+                  <span style={{ fontSize: 10, color: resumenSemanal.totalSemana <= resumenSemanal.totalAnterior ? 'var(--teal)' : 'var(--red)', background: resumenSemanal.totalSemana <= resumenSemanal.totalAnterior ? 'var(--green-bg)' : 'var(--red-bg)', padding: '2px 6px', borderRadius: 6 }}>
+                    {resumenSemanal.totalSemana <= resumenSemanal.totalAnterior ? '↓' : '↑'} vs sem ant.
+                  </span>
+                )}
+                <span style={{ color: 'var(--text3)', fontSize: 12 }}>{expandSemanal ? '▲' : '▼'}</span>
+              </div>
             </div>
-          </div>
-          {expandSemanal && resumenSemanal.top3.length > 0 && (
-            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <p style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 500, marginBottom: 2 }}>TOP CATEGORÍAS</p>
-              {resumenSemanal.top3.map((item, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 14 }}>{item.cat.icon}</span>
-                    <span style={{ fontSize: 12, color: 'var(--text2)' }}>{item.cat.name}</span>
+            {expandSemanal && resumenSemanal.top3.length > 0 && (
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <p style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 500, marginBottom: 2 }}>TOP CATEGORÍAS</p>
+                {resumenSemanal.top3.map((item, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 14 }}>{item.cat.icon}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text2)' }}>{item.cat.name}</span>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: item.cat.color }}>{mask(mxn(item.monto))}</span>
                   </div>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: item.cat.color }}>{mask(mxn(item.monto))}</span>
-                </div>
-              ))}
-              <p style={{ fontSize: 10, color: 'var(--text3)', marginTop: 4 }}>{resumenSemanal.count} movimientos · semana anterior: {mask(mxn(resumenSemanal.totalAnterior))}</p>
-            </div>
-          )}
-        </div>
+                ))}
+                <p style={{ fontSize: 10, color: 'var(--text3)', marginTop: 4 }}>{resumenSemanal.count} movimientos · semana anterior: {mask(mxn(resumenSemanal.totalAnterior))}</p>
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
 
       {/* Categorías */}
       <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, letterSpacing: '0.06em', marginBottom: 4 }}>POR CATEGORÍA · toca para ver detalle</p>
         {CATEGORIES.map(cat => {
-          let presupuesto = 0
-          cat.subcategories.forEach(sub => {
-            if (sub.type === 'liquidado' || sub.type === 'prepagado' || sub.type === 'pendiente') return
-            presupuesto += vista === 'quincenal' ? (quincena === 1 ? (sub.q1 || 0) : (sub.q2 || 0)) : ((sub.q1 || 0) + (sub.q2 || 0))
-          })
+          const presupuesto = vista === 'quincenal'
+            ? calcularTotalQ(quincena, cat, budgets)
+            : calcularTotalMes(cat, budgets)
           if (presupuesto === 0) return null
           const gastado = vista === 'quincenal'
-            ? getQuincenaGastado(transactions, cat.id, null, quincena, mes)
-            : getMesGastado(transactions, cat.id, mes)
+            ? getQuincenaGastado(transactions, cat.id, null, quincena, mes, anio)
+            : getMesGastado(transactions, cat.id, mes, anio)
 
-          // Subcategorías con presupuesto y gastado
           const subcats = cat.subcategories
             .filter(sub => {
               if (sub.type === 'liquidado' || sub.type === 'prepagado' || sub.type === 'pendiente') return false
@@ -282,8 +275,8 @@ export default function DashboardScreen({ transactions, user, budgetOverrides, l
             .map(sub => {
               const p = vista === 'quincenal' ? (quincena === 1 ? (sub.q1 || 0) : (sub.q2 || 0)) : ((sub.q1 || 0) + (sub.q2 || 0))
               const g = vista === 'quincenal'
-                ? getQuincenaGastado(transactions, cat.id, sub.id, quincena, mes)
-                : getMesGastado(transactions, cat.id, mes)
+                ? getQuincenaGastado(transactions, cat.id, sub.id, quincena, mes, anio)
+                : getMesGastado(transactions, cat.id, mes, anio)
               return { ...sub, presupuesto: p, gastado: g }
             })
 
@@ -301,43 +294,32 @@ export default function DashboardScreen({ transactions, user, budgetOverrides, l
         })}
       </div>
 
-      {/* Logros del mes — editables */}
+      {/* Logros del mes */}
       <div style={{ margin: '8px 16px 0', padding: '12px 14px', background: 'var(--green-bg)', borderRadius: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: logros.length > 0 ? 8 : 0 }}>
-          <p style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 500 }}>🏆 Logros {getMesActual()}</p>
+          <p style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 500 }}>🏆 Logros {mesNombre}</p>
           <button onClick={() => setShowLogrosEditor(!showLogrosEditor)}
             style={{ fontSize: 10, color: 'var(--teal)', background: 'transparent', border: '0.5px solid var(--teal)', padding: '2px 8px', borderRadius: 6, cursor: 'pointer' }}>
             {showLogrosEditor ? 'Cerrar' : '+ Agregar'}
           </button>
         </div>
-
         {logros.map(l => (
           <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
             <p style={{ fontSize: 11, color: 'var(--text2)' }}>✓ {l.texto}</p>
             {showLogrosEditor && (
-              <button onClick={() => deleteLogro(l.id)}
-                style={{ fontSize: 10, color: 'var(--red)', background: 'transparent', border: 'none', cursor: 'pointer' }}>✕</button>
+              <button onClick={() => deleteLogro(l.id)} style={{ fontSize: 10, color: 'var(--red)', background: 'transparent', border: 'none', cursor: 'pointer' }}>✕</button>
             )}
           </div>
         ))}
-
         {logros.length === 0 && !showLogrosEditor && (
           <p style={{ fontSize: 11, color: 'var(--text3)' }}>Sin logros registrados aún</p>
         )}
-
         {showLogrosEditor && (
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <input
-              value={nuevoLogro}
-              onChange={e => setNuevoLogro(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleAddLogro()}
+            <input value={nuevoLogro} onChange={e => setNuevoLogro(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddLogro()}
               placeholder="Ej: TC BBVA liquidada ✓"
-              style={{ flex: 1, background: 'var(--card)', border: '0.5px solid var(--border)', color: 'var(--text)', padding: '7px 10px', borderRadius: 8, fontSize: 12, outline: 'none' }}
-            />
-            <button onClick={handleAddLogro}
-              style={{ background: 'var(--teal)', border: 'none', color: '#fff', padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-              ✓
-            </button>
+              style={{ flex: 1, background: 'var(--card)', border: '0.5px solid var(--border)', color: 'var(--text)', padding: '7px 10px', borderRadius: 8, fontSize: 12, outline: 'none' }} />
+            <button onClick={handleAddLogro} style={{ background: 'var(--teal)', border: 'none', color: '#fff', padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>✓</button>
           </div>
         )}
       </div>
