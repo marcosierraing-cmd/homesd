@@ -1,35 +1,25 @@
 import { useState, useMemo } from 'react'
 import SemaphoreCard from '../components/SemaphoreCard.jsx'
-import { CATEGORIES, INGRESO_QUINCENAL } from '../data/budget.js'
+import { CATEGORIES } from '../data/budget.js'
 import { usePrivacy } from '../context/PrivacyContext.jsx'
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
-// Parsear "YYYY-MM" → { year, month (0-indexed) }
 function parseYearMonth(ym) {
   const [y, m] = ym.split('-').map(Number)
   return { year: y, month: m - 1 }
 }
 
-// Navegar al mes anterior/siguiente
 function shiftMonth(ym, delta) {
   const [y, m] = ym.split('-').map(Number)
   const d = new Date(y, m - 1 + delta, 1)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-function getQuincenaActual() {
-  return new Date().getDate() <= 15 ? 1 : 2
-}
+function getQuincenaActual() { return new Date().getDate() <= 15 ? 1 : 2 }
 
-// Calcular total presupuestado de una quincena usando budgets de Supabase
-// Si no hay budget para ese mes, cae al presupuesto estático de CATEGORIES
 function calcularTotalQ(quincena, cat, budgets) {
-  // Si hay budget guardado para esta categoría, usarlo
-  if (budgets && budgets[cat.id]) {
-    return quincena === 1 ? (budgets[cat.id].q1 || 0) : (budgets[cat.id].q2 || 0)
-  }
-  // Fallback: presupuesto estático
+  if (budgets && budgets[cat.id]) return quincena === 1 ? (budgets[cat.id].q1 || 0) : (budgets[cat.id].q2 || 0)
   return cat.subcategories.reduce((ss, sub) => {
     if (sub.type === 'liquidado' || sub.type === 'prepagado' || sub.type === 'pendiente') return ss
     return ss + (quincena === 1 ? (sub.q1 || 0) : (sub.q2 || 0))
@@ -37,49 +27,45 @@ function calcularTotalQ(quincena, cat, budgets) {
 }
 
 function calcularTotalMes(cat, budgets) {
-  if (budgets && budgets[cat.id]) {
-    return (budgets[cat.id].q1 || 0) + (budgets[cat.id].q2 || 0)
-  }
+  if (budgets && budgets[cat.id]) return (budgets[cat.id].q1 || 0) + (budgets[cat.id].q2 || 0)
   return cat.subcategories.reduce((ss, sub) => {
     if (sub.type === 'liquidado' || sub.type === 'prepagado' || sub.type === 'pendiente') return ss
     return ss + (sub.q1 || 0) + (sub.q2 || 0)
   }, 0)
 }
 
-const getQuincenaGastado = (transactions, catId, subId, quincena, mes, anio) => {
-  return transactions.filter(t => {
+const getQuincenaGastado = (transactions, catId, subId, quincena, mes, anio) =>
+  transactions.filter(t => {
     if (t.tipo === 'ingreso') return false
     const d = new Date(t.timestamp || t.createdAt || t.created_at)
     const tQ = d.getDate() <= 15 ? 1 : 2
     return d.getFullYear() === anio && d.getMonth() === mes && tQ === quincena
       && t.categoriaId === catId && (!subId || t.subcategoriaId === subId)
   }).reduce((s, t) => s + (t.monto || 0), 0)
-}
 
-const getMesGastado = (transactions, catId, mes, anio) => {
-  return transactions.filter(t => {
+const getMesGastado = (transactions, catId, mes, anio) =>
+  transactions.filter(t => {
     if (t.tipo === 'ingreso') return false
     const d = new Date(t.timestamp || t.createdAt || t.created_at)
     return d.getFullYear() === anio && d.getMonth() === mes && t.categoriaId === catId
   }).reduce((s, t) => s + (t.monto || 0), 0)
-}
 
-// Resumen de últimos 7 días (siempre del mes actual real)
 function getResumenSemanal(transactions) {
   const ahora = new Date()
   const hace7 = new Date(ahora.getTime() - 7 * 24 * 60 * 60 * 1000)
   const hace14 = new Date(ahora.getTime() - 14 * 24 * 60 * 60 * 1000)
-  const ultimos7 = transactions.filter(t => { if (t.tipo === 'ingreso') return false; const d = new Date(t.timestamp || t.createdAt || t.created_at); return d >= hace7 })
+  const ultimos7 = transactions.filter(t => { if (t.tipo === 'ingreso') return false; return new Date(t.timestamp || t.createdAt || t.created_at) >= hace7 })
   const semanaAnterior = transactions.filter(t => { if (t.tipo === 'ingreso') return false; const d = new Date(t.timestamp || t.createdAt || t.created_at); return d >= hace14 && d < hace7 })
   const totalSemana = ultimos7.reduce((s, t) => s + (t.monto || 0), 0)
   const totalAnterior = semanaAnterior.reduce((s, t) => s + (t.monto || 0), 0)
   const porCat = {}
   ultimos7.forEach(t => { porCat[t.categoriaId] = (porCat[t.categoriaId] || 0) + (t.monto || 0) })
-  const top3 = Object.entries(porCat).sort(([,a],[,b]) => b - a).slice(0, 3).map(([id, monto]) => ({ id, monto, cat: CATEGORIES.find(c => c.id === id) })).filter(x => x.cat)
+  const top3 = Object.entries(porCat).sort(([,a],[,b]) => b - a).slice(0, 3)
+    .map(([id, monto]) => ({ id, monto, cat: CATEGORIES.find(c => c.id === id) })).filter(x => x.cat)
   return { totalSemana, totalAnterior, top3, count: ultimos7.length }
 }
 
-export default function DashboardScreen({ transactions, user, budgetOverrides, budgets = {}, selectedMonth, setSelectedMonth, logros = [], addLogro, deleteLogro, syncing, online }) {
+export default function DashboardScreen({ transactions, user, budgetOverrides, budgets = {}, subcategories = {}, selectedMonth, setSelectedMonth, logros = [], addLogro, deleteLogro, syncing, online }) {
   const [vista, setVista] = useState('quincenal')
   const [quincena, setQuincena] = useState(getQuincenaActual())
   const [showLogrosEditor, setShowLogrosEditor] = useState(false)
@@ -87,38 +73,29 @@ export default function DashboardScreen({ transactions, user, budgetOverrides, b
   const [expandSemanal, setExpandSemanal] = useState(false)
   const { mask } = usePrivacy()
 
-  // Derivar año y mes del selectedMonth
   const { year: anio, month: mes } = useMemo(() => parseYearMonth(selectedMonth), [selectedMonth])
   const mesNombre = MESES[mes]
-  const esHoy = selectedMonth === `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+  const todayYM = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+  const esHoy = selectedMonth === todayYM
 
   const mxn = n => '$' + Math.round(n).toLocaleString('es-MX')
-
   const resumenSemanal = useMemo(() => getResumenSemanal(transactions), [transactions])
 
-  // Total presupuestado del período seleccionado
-  const totalPresupuesto = useMemo(() => {
-    return CATEGORIES.reduce((s, cat) => {
-      const p = vista === 'quincenal'
-        ? calcularTotalQ(quincena, cat, budgets)
-        : calcularTotalMes(cat, budgets)
-      return s + p
-    }, 0)
-  }, [quincena, vista, budgets])
+  const totalPresupuesto = useMemo(() =>
+    CATEGORIES.reduce((s, cat) => s + (vista === 'quincenal' ? calcularTotalQ(quincena, cat, budgets) : calcularTotalMes(cat, budgets)), 0)
+  , [quincena, vista, budgets])
 
   const { totalGastado, totalIngresos } = useMemo(() => {
     const filtrados = transactions.filter(t => {
       const d = new Date(t.timestamp || t.createdAt || t.created_at)
       if (d.getFullYear() !== anio || d.getMonth() !== mes) return false
-      if (vista === 'quincenal') {
-        const tQ = d.getDate() <= 15 ? 1 : 2
-        return tQ === quincena
-      }
+      if (vista === 'quincenal') return (d.getDate() <= 15 ? 1 : 2) === quincena
       return true
     })
-    const gastado = filtrados.filter(t => t.tipo !== 'ingreso').reduce((s, t) => s + (t.monto || 0), 0)
-    const ingresos = filtrados.filter(t => t.tipo === 'ingreso').reduce((s, t) => s + (t.monto || 0), 0)
-    return { totalGastado: gastado, totalIngresos: ingresos }
+    return {
+      totalGastado: filtrados.filter(t => t.tipo !== 'ingreso').reduce((s, t) => s + (t.monto || 0), 0),
+      totalIngresos: filtrados.filter(t => t.tipo === 'ingreso').reduce((s, t) => s + (t.monto || 0), 0),
+    }
   }, [transactions, anio, mes, quincena, vista])
 
   const pctTotal = totalPresupuesto > 0 ? totalGastado / totalPresupuesto : 0
@@ -134,18 +111,17 @@ export default function DashboardScreen({ transactions, user, budgetOverrides, b
     <div className="screen" style={{ padding: '0 0 80px' }}>
       <div style={{ padding: '20px 20px 0' }}>
 
-        {/* Header */}
+        {/* Header con navegación de meses */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
           <div>
-            {/* Navegación por meses */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
               <button onClick={() => setSelectedMonth(shiftMonth(selectedMonth, -1))}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text3)', fontSize: 16, cursor: 'pointer', padding: '0 4px', lineHeight: 1 }}>‹</button>
-              <p style={{ fontSize: 12, color: esHoy ? 'var(--teal)' : 'var(--amber)', fontWeight: esHoy ? 400 : 600, minWidth: 100, textAlign: 'center' }}>
-                {mesNombre} {anio}{!esHoy && ' ·  planeando'}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text3)', fontSize: 18, cursor: 'pointer', padding: '0 2px', lineHeight: 1 }}>‹</button>
+              <p style={{ fontSize: 12, color: esHoy ? 'var(--text3)' : 'var(--amber)', fontWeight: esHoy ? 400 : 600, minWidth: 110, textAlign: 'center' }}>
+                {mesNombre} {anio}{!esHoy ? ' · planeando' : ''}
               </p>
               <button onClick={() => setSelectedMonth(shiftMonth(selectedMonth, 1))}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text3)', fontSize: 16, cursor: 'pointer', padding: '0 4px', lineHeight: 1 }}>›</button>
+                style={{ background: 'transparent', border: 'none', color: 'var(--text3)', fontSize: 18, cursor: 'pointer', padding: '0 2px', lineHeight: 1 }}>›</button>
             </div>
             <h1 className="serif" style={{ fontSize: 26, color: 'var(--gold)', lineHeight: 1.1 }}>Home SD</h1>
           </div>
@@ -170,7 +146,7 @@ export default function DashboardScreen({ transactions, user, budgetOverrides, b
           ))}
         </div>
 
-        {/* Selector Q1/Q2 */}
+        {/* Selector Q1 / Q2 */}
         {vista === 'quincenal' && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
             {[1, 2].map(q => (
@@ -187,14 +163,12 @@ export default function DashboardScreen({ transactions, user, budgetOverrides, b
         <div className="card-glass" style={{ padding: '18px 20px', marginBottom: 8 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <p style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>{vista === 'quincenal' ? 'Gastado Q' + quincena : 'Gastado este mes'}</p>
+              <p style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>{vista === 'quincenal' ? 'Gastado Q' + quincena : 'Gastado ' + mesNombre}</p>
               <p className="serif amount" style={{ fontSize: 32, color: 'var(--text)', lineHeight: 1 }}>{mask(mxn(totalGastado))}</p>
               <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>de {mask(mxn(totalPresupuesto))} presupuestado</p>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 22, fontWeight: 700, color: pctTotal >= 1 ? 'var(--red)' : pctTotal >= 0.8 ? 'var(--amber)' : 'var(--teal)' }}>
-                {mask(Math.round(pctTotal * 100) + '%')}
-              </div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: pctTotal >= 1 ? 'var(--red)' : pctTotal >= 0.8 ? 'var(--amber)' : 'var(--teal)' }}>
+              {mask(Math.round(pctTotal * 100) + '%')}
             </div>
           </div>
           <div className="progress-track" style={{ marginTop: 14, height: 8 }}>
@@ -219,7 +193,7 @@ export default function DashboardScreen({ transactions, user, budgetOverrides, b
           </div>
         )}
 
-        {/* Resumen semanal — solo cuando vemos mes actual */}
+        {/* Resumen semanal — solo mes actual */}
         {esHoy && (
           <div style={{ background: 'var(--card)', borderRadius: 12, padding: '12px 14px', marginBottom: 8, cursor: 'pointer' }} onClick={() => setExpandSemanal(!expandSemanal)}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -251,16 +225,13 @@ export default function DashboardScreen({ transactions, user, budgetOverrides, b
             )}
           </div>
         )}
-
       </div>
 
       {/* Categorías */}
       <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, letterSpacing: '0.06em', marginBottom: 4 }}>POR CATEGORÍA · toca para ver detalle</p>
         {CATEGORIES.map(cat => {
-          const presupuesto = vista === 'quincenal'
-            ? calcularTotalQ(quincena, cat, budgets)
-            : calcularTotalMes(cat, budgets)
+          const presupuesto = vista === 'quincenal' ? calcularTotalQ(quincena, cat, budgets) : calcularTotalMes(cat, budgets)
           if (presupuesto === 0) return null
           const gastado = vista === 'quincenal'
             ? getQuincenaGastado(transactions, cat.id, null, quincena, mes, anio)
@@ -277,7 +248,9 @@ export default function DashboardScreen({ transactions, user, budgetOverrides, b
               const g = vista === 'quincenal'
                 ? getQuincenaGastado(transactions, cat.id, sub.id, quincena, mes, anio)
                 : getMesGastado(transactions, cat.id, mes, anio)
-              return { ...sub, presupuesto: p, gastado: g }
+              // Usar nombre dinámico si existe, sino el estático
+              const nombre = subcategories[sub.id] || sub.name
+              return { ...sub, name: nombre, presupuesto: p, gastado: g }
             })
 
           return (
