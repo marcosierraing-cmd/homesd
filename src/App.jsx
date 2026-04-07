@@ -64,7 +64,11 @@ export default function App() {
             />
           } />
           <Route path="/capture" element={
-            <CaptureScreen onAdd={addTransaction} user={user} />
+            <CaptureScreen
+              onAdd={addTransaction}
+              user={user}
+              transactions={transactions}
+            />
           } />
           <Route path="/transactions" element={
             <TransactionsScreen transactions={transactions} onDelete={deleteTransaction} />
