@@ -7,6 +7,8 @@ export const CUENTAS = [
   { id: "nu", name: "Nu Bank", color: "#7F77DD", icon: "N" },
   { id: "bbva", name: "BBVA *2447", color: "#004999", icon: "B" },
   { id: "efectivo", name: "Efectivo", color: "#888780", icon: "E" },
+  { id: "tc_scotia", name: "TC Scotia", color: "#E24B4A", icon: "💳S" },
+  { id: "tc_bbva", name: "TC BBVA", color: "#004999", icon: "💳B" },
 ]
 
 export const USUARIOS = [
@@ -130,9 +132,7 @@ export const REGLAS_AUTOASIGNACION = [
 ]
 
 export function getQuincenaActual() {
-  const hoy = new Date()
-  const dia = hoy.getDate()
-  return dia <= 15 ? 1 : 2
+  return new Date().getDate() <= 15 ? 1 : 2
 }
 
 export function getMesActual() {
