@@ -5,6 +5,12 @@ export default async function handler(req) {
     return new Response('Method not allowed', { status: 405 })
   }
 
+  // Verificar token secreto — protege el endpoint de uso no autorizado
+  const token = req.headers.get('x-api-token')
+  if (!token || token !== process.env.API_SECRET_TOKEN) {
+    return new Response('Unauthorized', { status: 401 })
+  }
+
   const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
   if (!ANTHROPIC_KEY) {
     return new Response(JSON.stringify({ error: 'API key not configured' }), {
@@ -29,8 +35,8 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura exacta:
 }
 
 IMPORTANTE sobre la fecha:
-- Para tickets: busca la fecha impresa en el ticket (puede decir "Fecha:", o estar en el encabezado)
-- Para movimientos bancarios: busca la fecha del movimiento (formato DD/MM/YY, DD-MM-YYYY, etc.)
+- Para tickets: busca la fecha impresa en el ticket
+- Para movimientos bancarios: busca la fecha del movimiento
 - Convierte SIEMPRE al formato YYYY-MM-DD (ejemplo: 15/03/2026 → 2026-03-15)
 - Si el año tiene 2 dígitos, asume 2026 si es menor a 50, 2025 si es mayor
 - Si no puedes leer la fecha con certeza, pon null
@@ -58,15 +64,12 @@ No agregues explicaciones, solo el JSON.`
         messages: [{
           role: 'user',
           content: [
-            {
-              type: 'image',
-              source: { type: 'base64', media_type: mediaType, data: imageData }
-            },
+            { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageData } },
             {
               type: 'text',
               text: tipo === 'movimiento'
-                ? 'Extrae la información de este movimiento bancario. Incluye la fecha exacta del movimiento en formato YYYY-MM-DD.'
-                : 'Extrae la información de este ticket de compra. Incluye la fecha impresa en el ticket en formato YYYY-MM-DD.'
+                ? 'Extrae la información de este movimiento bancario. Incluye la fecha exacta en formato YYYY-MM-DD.'
+                : 'Extrae la información de este ticket de compra. Incluye la fecha impresa en formato YYYY-MM-DD.'
             }
           ]
         }]
