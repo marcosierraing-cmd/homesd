@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
+// Sin fallback hardcodeado — keys solo en variables de entorno Vercel
 const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL || 'https://dhdsmapiukaouyidyjzu.supabase.co',
-  import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_zPfFFQZy7qQouL3E5l3Pwg__Ysn5TUE'
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
 function currentYearMonth() {
@@ -16,7 +17,7 @@ export function useStorage() {
   const [logros, setLogros] = useState([]);
   const [budgetOverrides, setBudgetOverrides] = useState({});
   const [budgets, setBudgets] = useState({});
-  const [subcategories, setSubcategories] = useState({}); // { subcategory_id: name }
+  const [subcategories, setSubcategories] = useState({});
   const [selectedMonth, setSelectedMonth] = useState(currentYearMonth());
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState(null);
