@@ -23,10 +23,17 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura exacta:
   "monto": número_sin_símbolo,
   "descripcion": "nombre_del_comercio_o_concepto",
   "comercio": "nombre_corto_del_comercio",
-  "fecha": "DD/MM/YYYY o null",
+  "fecha": "YYYY-MM-DD o null",
   "categoria_sugerida": "una de: deuda|educacion|servicios|vivienda|hogar|alimentacion|restaurantes|transporte|salud|social|hijos|imprevistos",
   "confianza": "alta|media|baja"
 }
+
+IMPORTANTE sobre la fecha:
+- Para tickets: busca la fecha impresa en el ticket (puede decir "Fecha:", o estar en el encabezado)
+- Para movimientos bancarios: busca la fecha del movimiento (formato DD/MM/YY, DD-MM-YYYY, etc.)
+- Convierte SIEMPRE al formato YYYY-MM-DD (ejemplo: 15/03/2026 → 2026-03-15)
+- Si el año tiene 2 dígitos, asume 2026 si es menor a 50, 2025 si es mayor
+- Si no puedes leer la fecha con certeza, pon null
 
 Para movimientos bancarios: extrae el monto, el comercio o beneficiario, y la fecha.
 Para tickets de compra: extrae el total, el nombre del establecimiento y la fecha.
@@ -34,12 +41,8 @@ Si no puedes leer algo con certeza, pon null.
 No agregues explicaciones, solo el JSON.`
 
     const isBase64 = image.startsWith('data:')
-    const mediaType = isBase64
-      ? image.split(';')[0].split(':')[1]
-      : 'image/jpeg'
-    const imageData = isBase64
-      ? image.split(',')[1]
-      : image
+    const mediaType = isBase64 ? image.split(';')[0].split(':')[1] : 'image/jpeg'
+    const imageData = isBase64 ? image.split(',')[1] : image
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -62,8 +65,8 @@ No agregues explicaciones, solo el JSON.`
             {
               type: 'text',
               text: tipo === 'movimiento'
-                ? 'Extrae la información de este movimiento bancario.'
-                : 'Extrae la información de este ticket de compra.'
+                ? 'Extrae la información de este movimiento bancario. Incluye la fecha exacta del movimiento en formato YYYY-MM-DD.'
+                : 'Extrae la información de este ticket de compra. Incluye la fecha impresa en el ticket en formato YYYY-MM-DD.'
             }
           ]
         }]
@@ -90,10 +93,7 @@ No agregues explicaciones, solo el JSON.`
 
     return new Response(JSON.stringify(parsed), {
       status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      }
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
     })
 
   } catch (err) {
