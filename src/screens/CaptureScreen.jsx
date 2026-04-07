@@ -1,28 +1,76 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { CATEGORIES, CUENTAS, USUARIOS, autoAsignar } from '../data/budget.js'
 import { useNavigate } from 'react-router-dom'
 import { usePrivacy } from '../context/PrivacyContext.jsx'
 
-// Gastos frecuentes precargados
-const FRECUENTES = [
-  { label: '🥩 Coyotl', monto: 1500, categoriaId: 'alimentacion', subcategoriaId: 'coyotl', descripcion: 'Coyotl carnicería' },
-  { label: '🥦 Oscar', monto: 1150, categoriaId: 'alimentacion', subcategoriaId: 'oscar', descripcion: 'Oscar Cano fruta/verdura' },
-  { label: '⛽ Gasolina', monto: 600, categoriaId: 'transporte', subcategoriaId: 'gas_blanca_q1', descripcion: 'Gasolina 3008' },
-  { label: '🛒 Súper', monto: 1000, categoriaId: 'alimentacion', subcategoriaId: 'super', descripcion: 'Supermercado' },
-]
+// Fecha de hoy en formato YYYY-MM-DD usando zona local
+function todayLocal() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
-export default function CaptureScreen({ onAdd, user }) {
+// Calcular frecuentes automáticos del historial
+function calcularFrecuentes(transactions) {
+  if (!transactions?.length) return []
+  const hace60 = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
+  const recientes = transactions.filter(t => {
+    if (t.tipo === 'ingreso') return false
+    const d = new Date(t.timestamp || t.createdAt || t.created_at)
+    return d >= hace60
+  })
+  if (!recientes.length) return []
+
+  // Agrupar por subcategoriaId (si existe) o descripcion normalizada
+  const grupos = {}
+  recientes.forEach(t => {
+    const key = t.subcategoriaId || t.subcategoria_id || t.descripcion?.toLowerCase().trim() || 'otro'
+    if (!grupos[key]) grupos[key] = { montos: [], categoriaId: t.categoriaId || t.categoria_id, subcategoriaId: t.subcategoriaId || t.subcategoria_id, descripcion: t.descripcion, count: 0 }
+    grupos[key].montos.push(t.monto || 0)
+    grupos[key].count++
+  })
+
+  return Object.entries(grupos)
+    .sort(([, a], [, b]) => b.count - a.count)
+    .slice(0, 4)
+    .map(([key, g]) => {
+      // Promedio de últimas 3 ocurrencias
+      const ultimas3 = g.montos.slice(-3)
+      const monto = Math.round(ultimas3.reduce((s, m) => s + m, 0) / ultimas3.length)
+      // Buscar nombre en CATEGORIES
+      let label = g.descripcion || key
+      if (g.subcategoriaId) {
+        for (const cat of CATEGORIES) {
+          const sub = cat.subcategories.find(s => s.id === g.subcategoriaId)
+          if (sub) { label = sub.name; break }
+        }
+      }
+      // Emoji de la categoría
+      const cat = CATEGORIES.find(c => c.id === g.categoriaId)
+      const emoji = cat?.icon || '💸'
+      return {
+        label: `${emoji} ${label.split(' — ')[0].split(' (')[0]}`, // nombre corto
+        monto,
+        categoriaId: g.categoriaId,
+        subcategoriaId: g.subcategoriaId,
+        descripcion: g.descripcion || label,
+      }
+    })
+    .filter(f => f.monto > 0)
+}
+
+export default function CaptureScreen({ onAdd, user, transactions = [] }) {
   const navigate = useNavigate()
   const { hidden, toggle } = usePrivacy()
   const cameraRef = useRef()
   const galleryRef = useRef()
-  const [tipo, setTipo] = useState('gasto') // 'gasto' | 'ingreso'
-  const [modo, setModo] = useState('manual') // 'ticket' | 'movimiento' | 'manual'
+  const [tipo, setTipo] = useState('gasto')
+  const [modo, setModo] = useState('manual')
   const [step, setStep] = useState('idle')
   const [imageData, setImageData] = useState(null)
   const [extracted, setExtracted] = useState(null)
-  const [lastSaved, setLastSaved] = useState(null) // para deshacer
+  const [lastSaved, setLastSaved] = useState(null)
   const [showUndo, setShowUndo] = useState(false)
+  const [duplicado, setDuplicado] = useState(null) // transacción duplicada detectada
   const [form, setForm] = useState({
     monto: '',
     descripcion: '',
@@ -31,9 +79,13 @@ export default function CaptureScreen({ onAdd, user }) {
     cuentaId: 'nu',
     usuarioId: user?.usuarioId || 'marco',
     nota: '',
+    fecha: todayLocal(), // ← campo fecha
   })
   const [error, setError] = useState('')
   const mxn = n => '$' + Math.round(n).toLocaleString('es-MX')
+
+  // Frecuentes automáticos
+  const frecuentes = useMemo(() => calcularFrecuentes(transactions), [transactions])
 
   const handlePhoto = (e) => {
     const file = e.target.files?.[0]
@@ -63,6 +115,7 @@ export default function CaptureScreen({ onAdd, user }) {
         descripcion: data.descripcion || data.comercio || '',
         categoriaId: autocat?.categoria || '',
         subcategoriaId: autocat?.subcategoria || '',
+        fecha: data.fecha || todayLocal(), // ← IA llena la fecha si la detecta
       }))
       setStep('confirm')
     } catch {
@@ -82,22 +135,45 @@ export default function CaptureScreen({ onAdd, user }) {
     setStep('confirm')
   }
 
-  const handleSave = async () => {
-    if (!form.monto || isNaN(parseFloat(form.monto))) {
-      setError('El monto es requerido')
-      return
+  // Detectar duplicado por fecha exacta + monto ±2% + misma categoría
+  const detectarDuplicado = () => {
+    if (!form.monto || !form.categoriaId || !form.fecha) return null
+    const monto = parseFloat(form.monto)
+    return transactions.find(t => {
+      if (t.tipo === 'ingreso') return false
+      const tFecha = new Date(t.timestamp || t.createdAt || t.created_at)
+      const tFechaStr = `${tFecha.getFullYear()}-${String(tFecha.getMonth() + 1).padStart(2, '0')}-${String(tFecha.getDate()).padStart(2, '0')}`
+      if (tFechaStr !== form.fecha) return false
+      if ((t.categoriaId || t.categoria_id) !== form.categoriaId) return false
+      const tMonto = t.monto || 0
+      return Math.abs(tMonto - monto) / Math.max(tMonto, monto) <= 0.02
+    }) || null
+  }
+
+  const handleSave = async (forzar = false) => {
+    if (!form.monto || isNaN(parseFloat(form.monto))) { setError('El monto es requerido'); return }
+    if (tipo === 'gasto' && !form.categoriaId) { setError('Selecciona una categoría'); return }
+
+    // Verificar duplicado (solo si no se forzó)
+    if (!forzar) {
+      const dup = detectarDuplicado()
+      if (dup) { setDuplicado(dup); return }
     }
-    if (tipo === 'gasto' && !form.categoriaId) {
-      setError('Selecciona una categoría')
-      return
-    }
+
+    setDuplicado(null)
     setStep('saving')
+
+    // Construir timestamp con la fecha elegida en zona local
+    const [y, m, d] = form.fecha.split('-').map(Number)
+    const timestampFecha = new Date(y, m - 1, d, 12, 0, 0).toISOString()
+
     const transaction = {
       ...form,
       tipo,
       monto: parseFloat(form.monto),
       imagen: imageData,
       modoCaptura: modo,
+      timestamp: timestampFecha, // ← usa la fecha elegida
     }
     const saved = await onAdd(transaction)
     setLastSaved(saved)
@@ -110,7 +186,8 @@ export default function CaptureScreen({ onAdd, user }) {
     setStep('idle')
     setImageData(null)
     setExtracted(null)
-    setForm({ monto: '', descripcion: '', categoriaId: '', subcategoriaId: '', cuentaId: 'nu', usuarioId: user?.usuarioId || 'marco', nota: '' })
+    setDuplicado(null)
+    setForm({ monto: '', descripcion: '', categoriaId: '', subcategoriaId: '', cuentaId: 'nu', usuarioId: user?.usuarioId || 'marco', nota: '', fecha: todayLocal() })
     setError('')
   }
 
@@ -132,7 +209,7 @@ export default function CaptureScreen({ onAdd, user }) {
       </div>
 
       {/* Toggle GASTO / INGRESO */}
-      <div style={{ display: 'flex', gap: 0, background: 'var(--card)', borderRadius: 12, padding: 3, marginBottom: 16, border: '0.5px solid var(--border)' }}>
+      <div style={{ display: 'flex', background: 'var(--card)', borderRadius: 12, padding: 3, marginBottom: 16, border: '0.5px solid var(--border)' }}>
         {[
           { id: 'gasto', label: '💸 Gasto', activeColor: 'var(--red)', activeBg: 'var(--red-bg, rgba(226,75,74,0.1))' },
           { id: 'ingreso', label: '💰 Ingreso', activeColor: 'var(--teal)', activeBg: 'var(--green-bg)' },
@@ -146,11 +223,7 @@ export default function CaptureScreen({ onAdd, user }) {
 
       {/* Modo de captura */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-        {[
-          { id: 'manual', label: '✏️ Manual' },
-          { id: 'ticket', label: '🧾 Ticket' },
-          { id: 'movimiento', label: '📱 Banco' },
-        ].map(m => (
+        {[{ id: 'manual', label: '✏️ Manual' }, { id: 'ticket', label: '🧾 Ticket' }, { id: 'movimiento', label: '📱 Banco' }].map(m => (
           <button key={m.id} onClick={() => { setModo(m.id); reset() }}
             style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: `0.5px solid ${modo === m.id ? 'var(--gold-dim)' : 'var(--border2)'}`, background: modo === m.id ? 'var(--gold-bg)' : 'var(--card)', color: modo === m.id ? 'var(--gold)' : 'var(--text3)', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
             {m.label}
@@ -158,53 +231,62 @@ export default function CaptureScreen({ onAdd, user }) {
         ))}
       </div>
 
-      {/* Gastos frecuentes — solo en modo manual/gasto */}
-      {step === 'idle' && modo === 'manual' && tipo === 'gasto' && (
-        <div style={{ marginBottom: 16 }}>
-          <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, letterSpacing: '0.06em', marginBottom: 8 }}>FRECUENTES</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            {FRECUENTES.map((f, i) => (
-              <button key={i} onClick={() => applyFrecuente(f)}
-                style={{ padding: '12px 10px', borderRadius: 10, border: '0.5px solid var(--border2)', background: 'var(--card)', cursor: 'pointer', textAlign: 'left' }}>
-                <p style={{ fontSize: 13, marginBottom: 3 }}>{f.label}</p>
-                <p style={{ fontSize: 12, color: 'var(--gold)', fontWeight: 600 }}>{mxn(f.monto)}</p>
-              </button>
-            ))}
-          </div>
-          <button className="btn btn-ghost" onClick={() => setStep('confirm')}
-            style={{ width: '100%', marginTop: 10, fontSize: 13 }}>
-            Otro monto / categoría →
-          </button>
-        </div>
-      )}
+      {/* IDLE — Frecuentes automáticos + botones de captura */}
+      {step === 'idle' && (
+        <>
+          {/* Frecuentes */}
+          {tipo === 'gasto' && frecuentes.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, letterSpacing: '0.05em', marginBottom: 8 }}>FRECUENTES</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {frecuentes.map((f, i) => (
+                  <button key={i} onClick={() => applyFrecuente(f)}
+                    style={{ background: 'var(--card)', border: '0.5px solid var(--border2)', borderRadius: 12, padding: '12px 14px', textAlign: 'left', cursor: 'pointer' }}>
+                    <p style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 500, marginBottom: 4 }}>{f.label}</p>
+                    <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--gold)' }}>{mxn(f.monto)}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
-      {/* Cámara / galería */}
-      {step === 'idle' && modo !== 'manual' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handlePhoto} />
-          <input ref={galleryRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePhoto} />
-          <button className="btn btn-primary" onClick={() => cameraRef.current?.click()}
-            style={{ width: '100%', height: 90, flexDirection: 'column', gap: 8, borderRadius: 16 }}>
-            <CameraIcon />
-            <span style={{ fontSize: 14 }}>{modo === 'ticket' ? 'Tomar foto del ticket' : 'Fotografiar movimiento bancario'}</span>
-          </button>
-          <button className="btn btn-secondary" onClick={() => galleryRef.current?.click()}
-            style={{ width: '100%', height: 68, flexDirection: 'row', gap: 10, borderRadius: 14 }}>
-            <GalleryIcon />
-            <span style={{ fontSize: 14 }}>Elegir de galería</span>
-          </button>
-          <button className="btn btn-ghost" onClick={() => setStep('confirm')} style={{ width: '100%', fontSize: 13 }}>
-            Captura manual sin foto
-          </button>
-        </div>
+          {/* Captura por ticket/banco */}
+          {(modo === 'ticket' || modo === 'movimiento') && (
+            <>
+              <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handlePhoto} />
+              <input ref={galleryRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePhoto} />
+              <button className="btn btn-primary" onClick={() => cameraRef.current?.click()}
+                style={{ width: '100%', height: 72, flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                <CameraIcon /><span style={{ fontSize: 13 }}>Tomar foto</span>
+              </button>
+              <button className="btn btn-secondary" onClick={() => galleryRef.current?.click()}
+                style={{ width: '100%', height: 52, gap: 10, marginBottom: 10 }}>
+                <GalleryIcon /><span style={{ fontSize: 13 }}>Elegir de galería</span>
+              </button>
+            </>
+          )}
+
+          {/* Manual — ir directo al formulario */}
+          {modo === 'manual' && (
+            <button className="btn btn-secondary" onClick={() => setStep('confirm')}
+              style={{ width: '100%', height: 52 }}>
+              ✏️ Captura manual
+            </button>
+          )}
+
+          <p style={{ textAlign: 'center', marginTop: 14, fontSize: 12, color: 'var(--text3)', cursor: 'pointer' }}
+            onClick={() => setStep('confirm')}>
+            Otro monto / categoría →
+          </p>
+        </>
       )}
 
       {/* Preview */}
-      {step === 'preview' && imageData && (
+      {step === 'preview' && (
         <div>
-          <img src={imageData} alt="preview" style={{ width: '100%', borderRadius: 12, marginBottom: 16, maxHeight: 300, objectFit: 'contain', background: 'var(--card)' }} />
+          <img src={imageData} alt="preview" style={{ width: '100%', borderRadius: 12, marginBottom: 16, maxHeight: 280, objectFit: 'cover' }} />
           <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-secondary" onClick={reset} style={{ flex: 1 }}>Cambiar foto</button>
+            <button className="btn btn-secondary" onClick={reset} style={{ flex: 1 }}>Cambiar</button>
             <button className="btn btn-primary" onClick={processWithClaude} style={{ flex: 2 }}>⚡ Procesar con IA</button>
           </div>
           <button className="btn btn-ghost" onClick={() => setStep('confirm')} style={{ width: '100%', marginTop: 8, fontSize: 12 }}>
@@ -218,7 +300,30 @@ export default function CaptureScreen({ onAdd, user }) {
         <div style={{ textAlign: 'center', padding: '50px 0' }}>
           <div style={{ width: 48, height: 48, borderRadius: '50%', border: '2px solid var(--gold-bg)', borderTopColor: 'var(--gold)', animation: 'spin 0.8s linear infinite', margin: '0 auto 16px' }} />
           <p style={{ color: 'var(--text2)', fontSize: 14 }}>Claude está leyendo el {modo === 'ticket' ? 'ticket' : 'movimiento'}...</p>
-          <p style={{ color: 'var(--text3)', fontSize: 12, marginTop: 8 }}>Extrayendo monto, comercio y categoría</p>
+          <p style={{ color: 'var(--text3)', fontSize: 12, marginTop: 8 }}>Extrayendo monto, fecha y categoría</p>
+        </div>
+      )}
+
+      {/* Modal duplicado */}
+      {duplicado && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: 'var(--card)', borderRadius: 16, padding: 24, width: '100%', maxWidth: 340 }}>
+            <p style={{ fontSize: 22, textAlign: 'center', marginBottom: 12 }}>⚠️</p>
+            <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', textAlign: 'center', marginBottom: 8 }}>Posible duplicado</p>
+            <p style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center', marginBottom: 20 }}>
+              Ya existe un gasto de <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{mxn(duplicado.monto)}</span> en <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{form.fecha}</span> en la misma categoría.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setDuplicado(null)}
+                style={{ flex: 1, padding: '10px', borderRadius: 10, border: '0.5px solid var(--border)', background: 'transparent', color: 'var(--text3)', fontSize: 13, cursor: 'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={() => handleSave(true)}
+                style={{ flex: 1, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--red)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                Guardar igual
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -232,9 +337,26 @@ export default function CaptureScreen({ onAdd, user }) {
             <div style={{ background: 'var(--green-bg)', borderRadius: 10, padding: '10px 12px' }}>
               <p style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 500 }}>
                 IA extrajo: {extracted.comercio} · {extracted.monto ? mxn(extracted.monto) : '?'} · confianza: {extracted.confianza}
+                {extracted.fecha && <span> · fecha: {extracted.fecha}</span>}
               </p>
             </div>
           )}
+
+          {/* Fecha — siempre visible y editable */}
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6, display: 'block' }}>
+              📅 FECHA DEL {tipo === 'ingreso' ? 'INGRESO' : 'GASTO'}
+              {form.fecha !== todayLocal() && (
+                <span style={{ marginLeft: 8, color: 'var(--amber)', fontSize: 10 }}>
+                  · {new Date(form.fecha + 'T12:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </span>
+              )}
+            </label>
+            <input className="input" type="date" value={form.fecha}
+              onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))}
+              style={{ fontSize: 15, color: form.fecha !== todayLocal() ? 'var(--amber)' : 'var(--text)' }}
+            />
+          </div>
 
           {/* Monto */}
           <div>
@@ -248,7 +370,7 @@ export default function CaptureScreen({ onAdd, user }) {
             />
           </div>
 
-          {/* Ingreso rápido — botón quincena */}
+          {/* Ingreso rápido */}
           {tipo === 'ingreso' && (
             <button onClick={() => setForm(f => ({ ...f, monto: '47765', descripcion: 'Quincena', categoriaId: '' }))}
               style={{ width: '100%', padding: '10px', borderRadius: 10, border: '0.5px solid var(--teal)', background: 'var(--green-bg)', color: 'var(--teal)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
@@ -270,7 +392,7 @@ export default function CaptureScreen({ onAdd, user }) {
             />
           </div>
 
-          {/* Categoría — solo para gastos */}
+          {/* Categoría */}
           {tipo === 'gasto' && (
             <div>
               <label style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6, display: 'block' }}>
@@ -299,11 +421,11 @@ export default function CaptureScreen({ onAdd, user }) {
           {/* Cuenta */}
           <div>
             <label style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6, display: 'block' }}>CUENTA</label>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {CUENTAS.map(c => (
                 <button key={c.id} onClick={() => setForm(f => ({ ...f, cuentaId: c.id }))}
-                  style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: `0.5px solid ${form.cuentaId === c.id ? c.color : 'var(--border2)'}`, background: form.cuentaId === c.id ? `${c.color}15` : 'var(--card)', color: form.cuentaId === c.id ? c.color : 'var(--text3)', fontSize: 11, cursor: 'pointer' }}>
-                  {c.icon}<br />{c.name.split(' ')[0]}
+                  style={{ flex: '1 1 auto', padding: '8px 4px', borderRadius: 8, border: `0.5px solid ${form.cuentaId === c.id ? c.color : 'var(--border2)'}`, background: form.cuentaId === c.id ? `${c.color}15` : 'var(--card)', color: form.cuentaId === c.id ? c.color : 'var(--text3)', fontSize: 11, cursor: 'pointer' }}>
+                  {c.icon}<br /><span style={{ fontSize: 9 }}>{c.name.split(' ')[0]}</span>
                 </button>
               ))}
             </div>
@@ -324,17 +446,17 @@ export default function CaptureScreen({ onAdd, user }) {
 
           {error && <p style={{ color: 'var(--red)', fontSize: 12 }}>{error}</p>}
 
-          <button className="btn btn-primary" onClick={handleSave} style={{ width: '100%', marginTop: 4, background: tipo === 'ingreso' ? 'var(--teal)' : undefined }}>
+          <button className="btn btn-primary" onClick={() => handleSave(false)} style={{ width: '100%', marginTop: 4, background: tipo === 'ingreso' ? 'var(--teal)' : undefined }}>
             {tipo === 'ingreso' ? '💰 Guardar ingreso' : '💸 Guardar gasto'}
           </button>
           <button className="btn btn-ghost" onClick={reset} style={{ width: '100%', fontSize: 13 }}>Cancelar</button>
         </div>
       )}
 
-      {/* Saving con feedback */}
+      {/* Saving */}
       {step === 'saving' && (
         <div style={{ textAlign: 'center', padding: '60px 0' }}>
-          <div style={{ width: 64, height: 64, borderRadius: '50%', background: tipo === 'ingreso' ? 'var(--green-bg)' : 'var(--green-bg)', border: `2px solid ${tipo === 'ingreso' ? 'var(--teal)' : 'var(--teal)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 28 }}>
+          <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--green-bg)', border: '2px solid var(--teal)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 28 }}>
             {tipo === 'ingreso' ? '💰' : '✓'}
           </div>
           <p style={{ color: 'var(--teal)', fontSize: 18, fontWeight: 600 }}>
@@ -343,6 +465,11 @@ export default function CaptureScreen({ onAdd, user }) {
           <p style={{ color: 'var(--text3)', fontSize: 13, marginTop: 4 }}>
             {cat ? `${cat.icon} ${cat.name}` : tipo === 'ingreso' ? 'Ingreso registrado' : 'Gasto registrado'}
           </p>
+          {form.fecha !== todayLocal() && (
+            <p style={{ color: 'var(--amber)', fontSize: 12, marginTop: 4 }}>
+              📅 {new Date(form.fecha + 'T12:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}
+            </p>
+          )}
         </div>
       )}
     </div>
