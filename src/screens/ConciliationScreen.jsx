@@ -58,19 +58,18 @@ function buildTimestamp(fechaStr) {
 
 function parseCSVFile(text) {
   // Strip BOM
-  const clean = text.replace(/^\uFEFF/, '').trim()
-  const lines = clean.split(/\r?\n/).filter(l => l.trim())
+  const clean = text.replace(/^﻿/, '').trim()
+  const lines = clean.split(/
+?
+/).filter(l => l.trim())
   if (lines.length < 2) return []
-
   // Parse header
   const header = splitCSVLine(lines[0]).map(h => h.toLowerCase().trim())
   const fechaIdx = header.findIndex(h => h === 'fecha')
   const descIdx  = header.findIndex(h => h === 'descripcion' || h === 'descripción')
   const montoIdx = header.findIndex(h => h === 'monto')
   const tipoIdx  = header.findIndex(h => h === 'tipo')
-
   if (fechaIdx < 0 || montoIdx < 0) return []
-
   const movs = []
   for (let i = 1; i < lines.length; i++) {
     const cols = splitCSVLine(lines[i])
@@ -276,10 +275,12 @@ export default function ConciliationScreen({ transactions, onAdd }) {
   }
 
   const toggleSeleccion = (i) => setSeleccionados(s => ({ ...s, [i]: !s[i] }))
+
   const cambiarTipo = (i, tipo) => {
     setResultados(r => ({ ...r, movimientos: r.movimientos.map((m, idx) => idx === i ? { ...m, tipo } : m) }))
     setSeleccionados(s => ({ ...s, [i]: tipo !== 'ignorar' }))
   }
+
   const cambiarCategoria = (i, catId) => {
     setResultados(r => ({ ...r, movimientos: r.movimientos.map((m, idx) => idx === i ? { ...m, categoria: catId } : m) }))
   }
@@ -315,6 +316,7 @@ export default function ConciliationScreen({ transactions, onAdd }) {
   const movsFiltrados = resultados?.movimientos
     ? resultados.movimientos.filter(m => filtroTipo === 'todos' || m.tipo === filtroTipo)
     : []
+
   const countSel = Object.values(seleccionados).filter(Boolean).length
   const totalSel = resultados?.movimientos
     ? resultados.movimientos.filter((_, i) => seleccionados[i]).reduce((s, m) => s + (m.monto || 0), 0)
@@ -330,7 +332,6 @@ export default function ConciliationScreen({ transactions, onAdd }) {
       const isXML = file.name.toLowerCase().endsWith('.xml') || text.trim().startsWith('<')
       const parsed = isXML ? parseXMLFile(text) : parseCSVFile(text)
       if (!parsed.length) { setCsvError('No se encontraron movimientos. Verifica el formato del archivo.'); return }
-
       // Enrich with autoAsignar + ya_registrado
       const enriched = parsed.map(m => {
         const asig = autoAsignar(m.descripcion)
@@ -341,7 +342,6 @@ export default function ConciliationScreen({ transactions, onAdd }) {
           ya_registrado:  isYaRegistrado(m, transactions),
         }
       })
-
       setCsvMovs(enriched)
       const sel = {}
       enriched.forEach((m, i) => { sel[i] = !m.ya_registrado })
@@ -646,6 +646,7 @@ export default function ConciliationScreen({ transactions, onAdd }) {
               ))}
             </div>
           </div>
+
           <input ref={fileRef} type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={handleFile} />
           <button className="btn btn-primary" onClick={() => fileRef.current?.click()} style={{ width: '100%', height: 80, flexDirection: 'column', gap: 8, marginBottom: 10 }}>
             <span style={{ fontSize: 24 }}>📸</span><span>Foto del estado de cuenta</span>
@@ -653,6 +654,7 @@ export default function ConciliationScreen({ transactions, onAdd }) {
           <button className="btn btn-secondary" onClick={() => fileRef.current?.click()} style={{ width: '100%', height: 56, gap: 10 }}>
             <span style={{ fontSize: 18 }}>📄</span><span style={{ fontSize: 13 }}>Subir PDF</span>
           </button>
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 16 }}>
             <div style={{ background: 'var(--card)', borderRadius: 10, padding: '12px 14px' }}>
               <p style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4 }}>REGISTRADOS</p>
@@ -719,6 +721,7 @@ export default function ConciliationScreen({ transactions, onAdd }) {
                 <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{resultados.movimientos.length}</p>
               </div>
             </div>
+
             <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
               {['todos','gasto','ingreso','ignorar'].map(t => (
                 <button key={t} onClick={() => setFiltroTipo(t)}
@@ -730,10 +733,12 @@ export default function ConciliationScreen({ transactions, onAdd }) {
                 </button>
               ))}
             </div>
+
             <div style={{ background: 'var(--card)', borderRadius: 10, padding: '8px 14px', marginBottom: 12, display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 12, color: 'var(--text3)' }}>{countSel} seleccionados · {resultados.periodo || ''}</span>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gold)' }}>{mask(mxn(totalSel))}</span>
             </div>
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 80 }}>
               {resultados.movimientos.map((mov, i) => {
                 if (filtroTipo !== 'todos' && mov.tipo !== filtroTipo) return null
@@ -777,6 +782,7 @@ export default function ConciliationScreen({ transactions, onAdd }) {
                 )
               })}
             </div>
+
             <div style={{ position: 'sticky', bottom: 80, paddingBottom: 8 }}>
               <button className="btn btn-primary" onClick={guardarSeleccionados} disabled={guardando || countSel === 0} style={{ width: '100%', fontSize: 14 }}>
                 {guardando ? 'Guardando...' : 'Guardar ' + countSel + ' movimientos · ' + mask(mxn(totalSel))}
@@ -816,6 +822,7 @@ export default function ConciliationScreen({ transactions, onAdd }) {
         )}
 
       </>)}
+
     </div>
   )
 }
