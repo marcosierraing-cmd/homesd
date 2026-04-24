@@ -10,7 +10,6 @@ const MODO_OPCIONES = [
 
 const PDFJS_CDN    = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
 const PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
-
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     if (document.querySelector('script[src="' + src + '"]')) { resolve(); return }
@@ -59,9 +58,7 @@ function buildTimestamp(fechaStr) {
 function parseCSVFile(text) {
   // Strip BOM
   const clean = text.replace(/^﻿/, '').trim()
-  const lines = clean.split(/
-?
-/).filter(l => l.trim())
+  const lines = clean.split(/\r?\n/).filter(l => l.trim())
   if (lines.length < 2) return []
   // Parse header
   const header = splitCSVLine(lines[0]).map(h => h.toLowerCase().trim())
